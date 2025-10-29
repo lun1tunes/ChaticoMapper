@@ -7,7 +7,6 @@ Create Date: 2025-10-29 11:56:40.202938
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '3ac0466ac234'
@@ -43,7 +42,7 @@ def upgrade() -> None:
         sa.Column("text", sa.Text(), nullable=False, comment="Comment text content"),
         sa.Column("parent_id", sa.String(length=100), nullable=True, comment="Parent comment ID for replies"),
         sa.Column("timestamp", sa.Integer(), nullable=False, comment="Unix timestamp from webhook entry"),
-        sa.Column("raw_webhook_data", postgresql.JSONB(astext_type=sa.Text()), nullable=False, comment="Raw webhook payload for audit"),
+        sa.Column("raw_webhook_data", sa.JSON(), nullable=False, comment="Raw webhook payload for audit"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["media_id"], ["instagram_media.media_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("comment_id"),

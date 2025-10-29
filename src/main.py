@@ -12,7 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from src.api_v1 import webhook, worker_apps
+from src.api_v1.auth import router as auth_router
+from src.api_v1.users import router as users_router
+from src.api_v1.webhook import router as webhook_router
+from src.api_v1.worker_apps import router as worker_apps_router
 from src.core.config import get_settings
 from src.core.logging_config import setup_logging
 from src.core.models.db_helper import db_helper
@@ -91,8 +94,10 @@ def create_app() -> FastAPI:
     # ========================================
 
     # Include API routers
-    app.include_router(webhook.router, prefix="/api/v1")
-    app.include_router(worker_apps.router, prefix="/api/v1")
+    app.include_router(webhook_router, prefix="/api/v1")
+    app.include_router(worker_apps_router, prefix="/api/v1")
+    app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(users_router, prefix="/api/v1")
 
     # ========================================
     # Root Endpoints

@@ -7,20 +7,26 @@ and the application's DI container.
 
 from typing import Annotated, AsyncGenerator, Optional
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings, get_settings
 from src.core.models.db_helper import db_helper
+from src.core.models.user import User
+from src.core.repositories.user_repository import UserRepository
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 from src.core.repositories.instagram_media_repository import InstagramMediaRepository
 from src.core.repositories.instagram_comment_repository import InstagramCommentRepository
 from src.core.repositories.webhook_log_repository import WebhookLogRepository
 from src.core.services.redis_cache_service import RedisCacheService
 from src.core.services.instagram_api_service import InstagramAPIService
+from src.core.services.auth_service import authenticate_user
+from src.core.services.security import TokenDecodeError, safe_decode_token
 from src.core.use_cases.get_media_owner_use_case import GetMediaOwnerUseCase
 from src.core.use_cases.forward_webhook_use_case import ForwardWebhookUseCase
 from src.core.use_cases.process_webhook_use_case import ProcessWebhookUseCase
+from src.api_v1.schemas import TokenData
 
 
 # ============================================================================
@@ -70,6 +76,13 @@ def get_webhook_log_repository(
 ) -> WebhookLogRepository:
     """Get WebhookLogRepository instance."""
     return WebhookLogRepository(session)
+
+
+def get_user_repository(
+    session: Annotated[AsyncSession, Depends(get_session)]
+) -> UserRepository:
+    """Get UserRepository instance."""
+    return UserRepository(session)
 
 
 # ============================================================================
@@ -165,3 +178,57 @@ def get_process_webhook_use_case(
         forward_webhook_uc=forward_webhook_uc,
         redis_cache=redis_cache,
     )
+
+
+# ============================================================================
+# Authentication Dependencies
+# ============================================================================
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
+
+
+async def get_current_user(
+    token: Annotated[Optional[str], Depends(oauth2_scheme)],
+    repo: Annotated[UserRepository, Depends(get_user_repository)],
+) -> User:
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        payload = safe_decode_token(token)
+    except TokenDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token_data = TokenData.model_validate(payload)
+    if not token_data.sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = await repo.get_by_email(token_data.sub)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user
+
+
+async def get_current_active_user(
+    current_user: Annotated[User, Depends(get_current_user)]
+) -> User:
+    if not current_user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
+    return current_user
