@@ -3003,4 +3003,4 @@ dev = ["black", "factory-boy", "faker", "flake8", "freezegun", "httpx", "isort",
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4.0"
-content-hash = "d065583538d178b4df1e15a412ba00dc3392a4e08e8f55d3711be7be7b11086b"
+content-hash = "07364852ae1979e69934d060c4bf38a945056e82368d88942380fc661765c009"
