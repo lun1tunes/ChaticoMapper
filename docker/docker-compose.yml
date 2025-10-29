@@ -5,13 +5,16 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: mapper-postgres
+    labels:
+      - "project=mapper-app"
+      - "service=postgres"
     environment:
       POSTGRES_DB: chatico_mapper
       POSTGRES_USER: chatico_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chatico_password}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mapper_app_postgres_data:/var/lib/postgresql/data
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     networks:
@@ -28,6 +31,9 @@ services:
   redis:
     image: redis:7-alpine
     container_name: mapper-redis
+    labels:
+      - "project=mapper-app"
+      - "service=redis"
     command: >
       redis-server
       --appendonly yes
@@ -36,13 +42,13 @@ services:
       --maxmemory-policy allkeys-lru
       --requirepass ${REDIS_PASSWORD:-chatico_password}
     volumes:
-      - redis_data:/data
+      - mapper_app_redis_data:/data
     ports:
       - "${REDIS_PORT:-6380}:6379"
     networks:
       - mapper-network
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-chatico_password}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -56,6 +62,9 @@ services:
       dockerfile: docker/Dockerfile
     image: chatico-mapper-app:${VERSION:-latest}
     container_name: mapper-app
+    labels:
+      - "project=mapper-app"
+      - "service=app"
     env_file:
       - .env
     environment:
@@ -82,13 +91,14 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  mapper_app_postgres_data:
     driver: local
     name: mapper_app_postgres_data
-  redis_data:
+  mapper_app_redis_data:
     driver: local
     name: mapper_app_redis_data
 
 networks:
   mapper-network:
     driver: bridge
+    name: mapper-app-network
