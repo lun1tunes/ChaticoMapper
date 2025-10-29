@@ -208,3 +208,8 @@ __marimo__/
 
 # Claude
 .claude
+
+#.md
+
+*.md
+!README.md
