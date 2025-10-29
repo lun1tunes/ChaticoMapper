@@ -13,6 +13,6 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-from app.api import router
-from app.config import settings
-from app.dependencies import container
+# from app.api import router
+# from app.config import settings
+# from app.dependencies import container
