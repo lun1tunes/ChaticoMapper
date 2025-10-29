@@ -1,12 +1,13 @@
 """Main use case for processing Instagram webhooks."""
 
 import logging
-from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.models.instagram_comment import InstagramComment
+from src.core.models.worker_app import WorkerApp
 from src.core.repositories.instagram_comment_repository import InstagramCommentRepository
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 from src.core.services.redis_cache_service import RedisCacheService
@@ -34,7 +35,7 @@ class ProcessWebhookUseCase:
         session: AsyncSession,
         get_media_owner_uc: GetMediaOwnerUseCase,
         forward_webhook_uc: ForwardWebhookUseCase,
-        redis_cache: RedisCacheService,
+        redis_cache: Optional[RedisCacheService] = None,
     ):
         self.session = session
         self.get_media_owner_uc = get_media_owner_uc
@@ -147,7 +148,7 @@ class ProcessWebhookUseCase:
         worker_app = await self._get_worker_app_cached(owner_id)
 
         if not worker_app:
-            error = f"No active worker app found for owner_id={owner_id}"
+            error = f"No worker app found for owner_id={owner_id}"
             logger.warning(error)
             return {
                 "success": False,
@@ -157,7 +158,7 @@ class ProcessWebhookUseCase:
 
         # Store comment in database
         try:
-            await self._store_comment(comment_data, owner_id)
+            await self._store_comment(comment_data)
             logger.debug(f"Stored comment: comment_id={comment_id}")
 
         except Exception as e:
@@ -174,54 +175,68 @@ class ProcessWebhookUseCase:
 
         if forward_result.get("success"):
             logger.info(
-                f"Successfully processed and forwarded comment to {worker_app.app_name}"
+                "Successfully processed comment_id=%s for owner_id=%s (username=%s)",
+                comment_id,
+                owner_id,
+                worker_app.owner_instagram_username,
             )
             return {
                 "success": True,
                 "comment_id": comment_id,
                 "owner_id": owner_id,
-                "worker_app": worker_app.app_name,
+                "worker_app_username": worker_app.owner_instagram_username,
+                "worker_app_base_url": worker_app.base_url,
                 "processing_time_ms": forward_result.get("processing_time_ms"),
             }
         else:
-            error = (
-                f"Failed to forward webhook to {worker_app.app_name}: "
-                f"{forward_result.get('error')}"
+            error_detail = forward_result.get("error")
+            logger.error(
+                "Failed to forward webhook to %s (owner_id=%s): %s",
+                worker_app.owner_instagram_username,
+                owner_id,
+                error_detail,
             )
-            logger.error(error)
             return {
                 "success": False,
-                "error": error,
+                "error": error_detail,
                 "comment_id": comment_id,
             }
 
-    async def _get_worker_app_cached(self, owner_id: str):
-        """Get worker app with Redis caching."""
-        # Check cache first
-        cached_data = await self.redis_cache.get_worker_app(owner_id)
-        if cached_data:
-            logger.debug(f"Worker app from cache for owner_id={owner_id}")
-            # Reconstruct worker_app from cached data
-            # For simplicity, we'll query DB but this could be optimized
-            return await self.worker_app_repo.get_active_by_owner_id(owner_id)
+    async def _get_worker_app_cached(self, owner_id: str) -> Optional[WorkerApp]:
+        """Retrieve worker app configuration with optional Redis caching."""
+        cached_id: Optional[str] = None
 
-        # Query database
-        worker_app = await self.worker_app_repo.get_active_by_owner_id(owner_id)
+        if self.redis_cache:
+            cached_data = await self.redis_cache.get_worker_app(owner_id)
+            if cached_data:
+                logger.debug("Worker app cache HIT for owner_id=%s", owner_id)
+                cached_id = cached_data.get("id")
+                if cached_id:
+                    try:
+                        worker_app = await self.worker_app_repo.get_by_id(UUID(cached_id))
+                        if worker_app:
+                            return worker_app
+                    except (ValueError, TypeError):
+                        logger.warning(
+                            "Invalid worker app id in cache for owner_id=%s",
+                            owner_id,
+                        )
 
-        if worker_app:
-            # Cache for future lookups
-            cache_data = {
+        # Cache miss or invalid entry -> fetch from DB
+        worker_app = await self.worker_app_repo.get_by_owner_id(owner_id)
+
+        if worker_app and self.redis_cache:
+            cache_payload = {
                 "id": str(worker_app.id),
                 "owner_id": worker_app.owner_id,
-                "app_name": worker_app.app_name,
+                "owner_instagram_username": worker_app.owner_instagram_username,
                 "base_url": worker_app.base_url,
-                "webhook_path": worker_app.webhook_path,
             }
-            await self.redis_cache.set_worker_app(owner_id, cache_data)
+            await self.redis_cache.set_worker_app(owner_id, cache_payload)
 
         return worker_app
 
-    async def _store_comment(self, comment_data: dict, owner_id: str) -> None:
+    async def _store_comment(self, comment_data: dict) -> None:
         """Store comment in database."""
         comment = InstagramComment(
             comment_id=comment_data["comment_id"],

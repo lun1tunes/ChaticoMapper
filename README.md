@@ -1,16 +1,15 @@
 # Chatico Mapper App
 
-Instagram Webhook Proxy Router with RabbitMQ Integration
+FastAPI Instagram Webhook Mapper
 
 ## 🎯 Overview
 
-Chatico Mapper App is a FastAPI-based proxy application that receives Instagram webhooks, extracts media owner information, and routes webhooks to appropriate worker applications using RabbitMQ for guaranteed delivery. The application follows Clean Architecture patterns with Dependency Injection and Repository Pattern.
+Chatico Mapper App is a FastAPI-based entry point for Instagram comment webhooks. It resolves the media owner for each comment, stores the payload for auditing, and forwards the webhook to the configured worker application responsible for that Instagram account. The project follows Clean Architecture principles with repository/use-case layers and Pydantic v2 schemas.
 
 ## 🏗️ Architecture
 
-- **Proxy Pattern + Message Queue + Service Discovery with Dynamic Routing**
+- **Event Mapper + HTTP Forwarder** for dynamic routing
 - **Clean Architecture** with layered separation
-- **Dependency Injection** using dependency-injector
 - **Repository Pattern** for data access abstraction
 - **Protocol-based interfaces** for service abstraction
 - **Async/await** throughout the application
@@ -21,9 +20,8 @@ Chatico Mapper App is a FastAPI-based proxy application that receives Instagram 
 - ✅ Instagram webhook processing with HMAC-SHA256 signature validation
 - ✅ Media owner resolution via Instagram Graph API
 - ✅ Dynamic worker app management with CRUD operations
-- ✅ RabbitMQ integration with guaranteed delivery
-- ✅ Dead letter queues for failed messages
-- ✅ Comprehensive logging and monitoring
+- ✅ Optional Redis cache for media-owner lookups
+- ✅ Structured logging and database-backed audit trail
 
 ### Security
 - ✅ Webhook signature validation
@@ -33,16 +31,14 @@ Chatico Mapper App is a FastAPI-based proxy application that receives Instagram 
 
 ### Monitoring
 - ✅ Health checks
-- ✅ Performance metrics
 - ✅ Webhook processing logs
-- ✅ RabbitMQ queue monitoring
+- ✅ Aggregated processing metrics (API ready)
 
 ## 📋 Requirements
 
 - Python 3.13+
 - PostgreSQL 15+
-- RabbitMQ 3.12+
-- Redis 7+ (optional)
+- Redis 7+ (optional for caching)
 
 ## 🛠️ Installation
 
@@ -56,7 +52,7 @@ Chatico Mapper App is a FastAPI-based proxy application that receives Instagram 
 
 2. **Configure environment variables**
    ```bash
-   cp env.example .env
+   cp .env.example .env
    # Edit .env with your actual values
    ```
 
@@ -85,7 +81,7 @@ Chatico Mapper App is a FastAPI-based proxy application that receives Instagram 
 
 4. **Start the application**
    ```bash
-   poetry run python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+   poetry run uvicorn src.main:app --host 0.0.0.0 --port 8100 --reload
    ```
 
 ## ⚙️ Configuration
@@ -101,7 +97,7 @@ Chatico Mapper App is a FastAPI-based proxy application that receives Instagram 
 | `WEBHOOK_VERIFY_TOKEN` | Webhook verification token | Yes |
 | `SECRET_KEY` | Application secret key | Yes |
 | `DATABASE_URL` | PostgreSQL connection URL | Yes |
-| `RABBITMQ_URL` | RabbitMQ connection URL | Yes |
+| `REDIS__URL` | Redis connection URL (leave blank to disable) | No |
 
 ### Instagram API Setup
 
@@ -128,7 +124,6 @@ Once the application is running, visit:
 - `GET /worker-apps/` - List worker apps
 - `PUT /worker-apps/{id}` - Update worker app
 - `DELETE /worker-apps/{id}` - Delete worker app
-- `POST /worker-apps/{id}/toggle` - Toggle active status
 
 #### Monitoring
 - `GET /monitoring/health` - Health check
@@ -141,29 +136,26 @@ Once the application is running, visit:
 2. **Signature Validation**: Validate HMAC-SHA256 signature
 3. **Media Owner Resolution**: Extract media IDs and resolve owner IDs
 4. **Routing Decision**: Find appropriate worker app by owner ID
-5. **RabbitMQ Publishing**: Publish message to worker app queue
+5. **HTTP Forwarding**: POST the original webhook to the mapped worker app endpoint
 6. **Logging**: Record processing results and metrics
 
 ## 🐳 Docker Services
 
 - **chatico-mapper**: FastAPI application
 - **postgres**: PostgreSQL database
-- **rabbitmq**: RabbitMQ message broker
 - **redis**: Redis cache (optional)
-- **nginx**: Reverse proxy (optional)
 
 ## 📊 Monitoring
 
 ### Health Checks
 - Application health: `GET /monitoring/health`
 - Database connectivity
-- RabbitMQ connectivity
+- Redis connectivity (when enabled)
 - Service status
 
 ### Metrics
-- Webhook processing statistics
-- Worker app performance
-- RabbitMQ queue sizes
+- Webhook processing statistics (count/success/failure)
+- Worker app inventories
 - Processing times
 
 ### Logs
@@ -176,17 +168,17 @@ Once the application is running, visit:
 
 ### Project Structure
 ```
-app/
-├── __init__.py
-├── main.py              # FastAPI application
-├── api.py               # API endpoints
-├── dependencies.py      # Dependency injection
-├── models.py            # Database models
-├── schemas.py           # Pydantic schemas
-├── repositories.py      # Repository pattern
-├── services.py          # Core services
-├── use_cases.py         # Business logic
-└── config.py            # Configuration
+src/
+├── api_v1/              # FastAPI routers & schemas
+├── core/
+│   ├── config.py        # Pydantic settings
+│   ├── dependencies.py  # FastAPI dependency wiring
+│   ├── middleware/      # Webhook verification middleware
+│   ├── models/          # SQLAlchemy models & db helper
+│   ├── repositories/    # Data access layer
+│   ├── services/        # Instagram API + cache services
+│   └── use_cases/       # Application logic
+└── main.py              # FastAPI entrypoint
 ```
 
 ### Running Tests
@@ -216,7 +208,7 @@ alembic downgrade -1
 
 1. **Environment Variables**: Set all required environment variables
 2. **Database**: Use managed PostgreSQL service
-3. **RabbitMQ**: Use managed RabbitMQ service or cluster
+3. **Redis**: Use managed Redis (optional) or disable caching entirely
 4. **SSL/TLS**: Configure HTTPS for webhook endpoints
 5. **Monitoring**: Set up monitoring and alerting
 6. **Logging**: Configure centralized logging
@@ -231,7 +223,7 @@ docker build -t chatico-mapper-app .
 docker run -d \
   --name chatico-mapper \
   --env-file .env \
-  -p 8000:8000 \
+  -p 8100:8100 \
   chatico-mapper-app
 ```
 
@@ -258,5 +250,4 @@ For support and questions:
 
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
-- [RabbitMQ Documentation](https://www.rabbitmq.com/documentation.html)
 - [Instagram Graph API](https://developers.facebook.com/docs/instagram-api/)

@@ -92,8 +92,6 @@ class InstagramMediaRepository(BaseRepository[InstagramMedia]):
         media_id: str,
         owner_id: str,
         owner_username: Optional[str] = None,
-        permalink: Optional[str] = None,
-        media_type: Optional[str] = None,
     ) -> InstagramMedia:
         """
         Create new media or update existing.
@@ -102,8 +100,6 @@ class InstagramMediaRepository(BaseRepository[InstagramMedia]):
             media_id: Instagram media ID
             owner_id: Instagram account ID
             owner_username: Instagram username
-            permalink: Media permalink URL
-            media_type: Media type (IMAGE, VIDEO, CAROUSEL_ALBUM)
 
         Returns:
             InstagramMedia instance
@@ -115,10 +111,6 @@ class InstagramMediaRepository(BaseRepository[InstagramMedia]):
             existing.owner_id = owner_id
             if owner_username:
                 existing.owner_username = owner_username
-            if permalink:
-                existing.permalink = permalink
-            if media_type:
-                existing.media_type = media_type
 
             await self.session.flush()
             logger.debug(f"Updated media: media_id={media_id}")
@@ -130,8 +122,6 @@ class InstagramMediaRepository(BaseRepository[InstagramMedia]):
                 media_id=media_id,
                 owner_id=owner_id,
                 owner_username=owner_username,
-                permalink=permalink,
-                media_type=media_type,
             )
             self.session.add(media)
             await self.session.flush()

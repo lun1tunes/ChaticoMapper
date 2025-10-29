@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from src.api_v1 import webhook, worker_apps
 from src.core.config import get_settings
@@ -13,8 +14,9 @@ from src.core.logging_config import setup_logging
 from src.core.middleware.webhook_verification import WebhookVerificationMiddleware
 from src.core.models.db_helper import db_helper
 
-# Setup logging
-setup_logging()
+# Configure logging based on environment settings early during startup
+settings = get_settings()
+setup_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +35,7 @@ async def lifespan(app: FastAPI):
     try:
         # Test database connection
         async with db_helper.engine.begin() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         logger.info("Database connection successful")
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
@@ -60,8 +62,6 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI application instance
     """
-    settings = get_settings()
-
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
@@ -125,7 +125,7 @@ def create_app() -> FastAPI:
         try:
             # Check database connection
             async with db_helper.engine.begin() as conn:
-                await conn.execute("SELECT 1")
+                await conn.execute(text("SELECT 1"))
             db_status = "healthy"
         except Exception as e:
             logger.error(f"Database health check failed: {e}")

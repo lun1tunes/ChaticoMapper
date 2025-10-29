@@ -58,11 +58,10 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://chatico_user:${POSTGRES_PASSWORD:-chatico_password}@postgres:5432/chatico_mapper
-      REDIS__URL: redis://:${REDIS_PASSWORD:-chatico_password}@redis:6379/0
       HOST: 0.0.0.0
-      PORT: 8000
+      PORT: 8100
     ports:
-      - "${APP_PORT:-8000}:8000"
+      - "${APP_PORT:-8100}:8100"
     networks:
       - chatico-network
     depends_on:
@@ -73,7 +72,7 @@ services:
     volumes:
       - ../logs:/app/logs
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
       interval: 30s
       timeout: 10s
       retries: 3

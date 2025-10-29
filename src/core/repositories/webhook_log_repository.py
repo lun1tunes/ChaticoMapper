@@ -88,7 +88,7 @@ class WebhookLogRepository(BaseRepository[WebhookLog]):
 
     async def get_by_status(
         self,
-        processing_status: str,
+        status: str,
         limit: int = 100,
         offset: int = 0
     ) -> list[WebhookLog]:
@@ -96,7 +96,7 @@ class WebhookLogRepository(BaseRepository[WebhookLog]):
         Get logs by processing status.
 
         Args:
-            processing_status: Processing status (success, failed, routed, etc.)
+            status: Processing status (success, failed, routed, etc.)
             limit: Maximum number of results
             offset: Number of results to skip
 
@@ -105,27 +105,27 @@ class WebhookLogRepository(BaseRepository[WebhookLog]):
         """
         result = await self.session.execute(
             select(WebhookLog)
-            .where(WebhookLog.processing_status == processing_status)
+            .where(WebhookLog.status == status)
             .order_by(WebhookLog.created_at.desc())
             .limit(limit)
             .offset(offset)
         )
         return list(result.scalars().all())
 
-    async def count_by_status(self, processing_status: str) -> int:
+    async def count_by_status(self, status: str) -> int:
         """
         Count logs by processing status.
 
         Args:
-            processing_status: Processing status
+            status: Processing status
 
         Returns:
             Count of logs
         """
         result = await self.session.execute(
-            select(func.count()).select_from(WebhookLog).where(
-                WebhookLog.processing_status == processing_status
-            )
+            select(func.count())
+            .select_from(WebhookLog)
+            .where(WebhookLog.status == status)
         )
         return result.scalar_one()
 

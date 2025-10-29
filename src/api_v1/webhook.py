@@ -8,7 +8,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api_v1.schemas import InstagramWebhookPayload, RoutingResponse
-from src.core.dependencies import get_session
+from src.core.dependencies import get_process_webhook_use_case
 from src.core.use_cases.process_webhook_use_case import ProcessWebhookUseCase
 from src.core.config import Settings, get_settings
 
@@ -83,8 +83,7 @@ async def verify_webhook(
 async def process_webhook(
     webhook_payload: InstagramWebhookPayload,
     request: Request,
-    session: Annotated[AsyncSession, Depends(get_session)],
-    settings: Annotated[Settings, Depends(get_settings)],
+    process_webhook_uc: Annotated[ProcessWebhookUseCase, Depends(get_process_webhook_use_case)],
 ):
     """
     Process Instagram webhook notifications.
@@ -106,46 +105,7 @@ async def process_webhook(
         f"entries={len(webhook_payload.entry)}"
     )
 
-    # Get dependencies (these would normally be injected via DI container)
-    # For now, we'll instantiate them directly
-    from src.core.services.redis_cache_service import RedisCacheService
-    from src.core.services.instagram_api_service import InstagramAPIService
-    from src.core.use_cases.get_media_owner_use_case import GetMediaOwnerUseCase
-    from src.core.use_cases.forward_webhook_use_case import ForwardWebhookUseCase
-
-    # Initialize services
-    redis_cache = RedisCacheService(
-        redis_url=str(settings.redis.url),
-        default_ttl=settings.redis.ttl,
-    )
-    await redis_cache.connect()
-
-    instagram_api = InstagramAPIService(
-        access_token=settings.instagram.access_token,
-        api_base_url=settings.instagram.api_base_url,
-        timeout=settings.instagram.api_timeout,
-    )
-
-    # Initialize use cases
-    get_media_owner_uc = GetMediaOwnerUseCase(
-        session=session,
-        redis_cache=redis_cache,
-        instagram_api=instagram_api,
-    )
-
-    forward_webhook_uc = ForwardWebhookUseCase(
-        session=session,
-        http_timeout=30.0,
-    )
-
-    process_webhook_uc = ProcessWebhookUseCase(
-        session=session,
-        get_media_owner_uc=get_media_owner_uc,
-        forward_webhook_uc=forward_webhook_uc,
-        redis_cache=redis_cache,
-    )
-
-    # Process webhook
+    # Process webhook using injected use case
     try:
         result = await process_webhook_uc.execute(webhook_payload.model_dump())
 
@@ -186,11 +146,6 @@ async def process_webhook(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"
         )
-
-    finally:
-        # Cleanup
-        await redis_cache.disconnect()
-        await instagram_api.close()
 
 
 @router.get("/health")

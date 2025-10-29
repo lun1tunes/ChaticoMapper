@@ -2,7 +2,6 @@
 
 import logging
 import time
-from typing import Optional
 from uuid import uuid4
 
 import httpx
@@ -17,10 +16,7 @@ logger = logging.getLogger(__name__)
 
 class ForwardWebhookUseCase:
     """
-    Forward webhook payload to worker app.
-
-    Supports both HTTP forwarding and RabbitMQ publishing.
-    Creates audit log entries for tracking.
+    Forward webhook payload to worker app over HTTP and create audit log entries.
     """
 
     def __init__(
@@ -117,7 +113,7 @@ class ForwardWebhookUseCase:
         Returns:
             dict with success status and details
         """
-        url = worker_app.full_webhook_url
+        url = worker_app.base_url
 
         try:
             async with httpx.AsyncClient(timeout=self.http_timeout) as client:
@@ -133,8 +129,10 @@ class ForwardWebhookUseCase:
 
                 if response.status_code in (200, 201, 202, 204):
                     logger.info(
-                        f"Successfully forwarded webhook to {worker_app.app_name}: "
-                        f"status={response.status_code}"
+                        "Forwarded webhook to %s (%s) status=%s",
+                        worker_app.owner_instagram_username,
+                        worker_app.base_url,
+                        response.status_code,
                     )
                     return {
                         "success": True,
@@ -144,8 +142,10 @@ class ForwardWebhookUseCase:
                     }
                 else:
                     logger.warning(
-                        f"Worker app returned non-success status: "
-                        f"app={worker_app.app_name}, status={response.status_code}"
+                        "Worker app responded with non-success status: username=%s base_url=%s status=%s",
+                        worker_app.owner_instagram_username,
+                        worker_app.base_url,
+                        response.status_code,
                     )
                     return {
                         "success": False,
@@ -156,7 +156,11 @@ class ForwardWebhookUseCase:
                     }
 
         except httpx.TimeoutException:
-            logger.error(f"Timeout forwarding to {worker_app.app_name}")
+            logger.error(
+                "Timeout forwarding to %s (%s)",
+                worker_app.owner_instagram_username,
+                worker_app.base_url,
+            )
             return {
                 "success": False,
                 "method": "http",
@@ -164,7 +168,12 @@ class ForwardWebhookUseCase:
             }
 
         except httpx.RequestError as e:
-            logger.error(f"Request error forwarding to {worker_app.app_name}: {e}")
+            logger.error(
+                "Request error forwarding to %s (%s): %s",
+                worker_app.owner_instagram_username,
+                worker_app.base_url,
+                e,
+            )
             return {
                 "success": False,
                 "method": "http",
@@ -194,8 +203,9 @@ class ForwardWebhookUseCase:
                 webhook_id=webhook_id,
                 owner_id=owner_id,
                 worker_app_id=worker_app.id,
-                target_app_name=worker_app.app_name,
-                processing_status="success" if result.get("success") else "failed",
+                target_owner_username=worker_app.owner_instagram_username,
+                target_base_url=worker_app.base_url,
+                status="success" if result.get("success") else "failed",
                 error_message=result.get("error"),
                 processing_time_ms=processing_time_ms,
             )

@@ -31,10 +31,13 @@ class WebhookLog(Base):
         index=True,
         comment="Target worker app ID",
     )
-    target_app_name: Mapped[str | None] = mapped_column(
-        String(255), nullable=True, comment="Target app name"
+    target_owner_username: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="Target Instagram username"
     )
-    processing_status: Mapped[str] = mapped_column(
+    target_base_url: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, comment="Target base URL"
+    )
+    status: Mapped[str] = mapped_column(
         String(50), nullable=False, index=True, comment="Processing status"
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Error messages")
@@ -49,4 +52,4 @@ class WebhookLog(Base):
     worker_app: Mapped["WorkerApp | None"] = relationship("WorkerApp", back_populates="webhook_logs")
 
     def __repr__(self) -> str:
-        return f"<WebhookLog(id={self.id}, webhook_id={self.webhook_id}, status={self.processing_status})>"
+        return f"<WebhookLog(id={self.id}, webhook_id={self.webhook_id}, status={self.status})>"

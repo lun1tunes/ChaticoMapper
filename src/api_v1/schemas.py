@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator, ConfigDict
+from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 
 
 class InstagramWebhookEntry(BaseModel):
@@ -52,9 +52,10 @@ class RoutingRequest(BaseModel):
         ..., description="Original webhook payload"
     )
     owner_id: str = Field(..., description="Instagram account ID")
-    target_app_url: str = Field(..., description="Target worker app URL")
-    target_app_name: str = Field(..., description="Target worker app name")
-    queue_name: str = Field(..., description="RabbitMQ queue name")
+    target_base_url: str = Field(..., description="Target worker app URL")
+    target_owner_username: Optional[str] = Field(
+        None, description="Instagram username of the target owner"
+    )
     webhook_id: str = Field(..., description="Unique webhook ID")
 
 
@@ -63,7 +64,7 @@ class RoutingResponse(BaseModel):
 
     status: str = Field(..., description="Processing status")
     message: str = Field(..., description="Response message")
-    routed_to: Optional[str] = Field(None, description="Target app name")
+    routed_to: Optional[str] = Field(None, description="Target owner username")
     processing_time_ms: Optional[int] = Field(
         None, description="Processing time in milliseconds"
     )
@@ -77,52 +78,19 @@ class WorkerAppCreate(BaseModel):
     owner_id: str = Field(
         ..., description="Instagram account ID", min_length=1, max_length=255
     )
-    app_name: str = Field(
-        ..., description="Application name", min_length=1, max_length=255
+    owner_instagram_username: str = Field(
+        ..., description="Instagram username of the owner", min_length=1, max_length=255
     )
     base_url: HttpUrl = Field(..., description="Base URL for HTTP requests")
-    webhook_path: str = Field(
-        default="/webhook", description="Webhook path", max_length=255
-    )
-    queue_name: str = Field(
-        ..., description="Queue name for RabbitMQ routing", min_length=1, max_length=255
-    )
-    is_active: bool = Field(default=True, description="Active status flag")
-
-    @field_validator("webhook_path")
-    @classmethod
-    def validate_webhook_path(cls, v):
-        """Validate webhook path starts with slash."""
-        if not v.startswith("/"):
-            raise ValueError("Webhook path must start with '/'")
-        return v
 
 
 class WorkerAppUpdate(BaseModel):
     """Worker app update schema."""
 
-    app_name: Optional[str] = Field(
-        None, description="Application name", min_length=1, max_length=255
+    owner_instagram_username: Optional[str] = Field(
+        None, description="Instagram username of the owner", min_length=1, max_length=255
     )
     base_url: Optional[HttpUrl] = Field(None, description="Base URL for HTTP requests")
-    webhook_path: Optional[str] = Field(
-        None, description="Webhook path", max_length=255
-    )
-    queue_name: Optional[str] = Field(
-        None,
-        description="Queue name for RabbitMQ routing",
-        min_length=1,
-        max_length=255,
-    )
-    is_active: Optional[bool] = Field(None, description="Active status flag")
-
-    @field_validator("webhook_path")
-    @classmethod
-    def validate_webhook_path(cls, v):
-        """Validate webhook path starts with slash."""
-        if v is not None and not v.startswith("/"):
-            raise ValueError("Webhook path must start with '/'")
-        return v
 
 
 class WorkerAppResponse(BaseModel):
@@ -130,11 +98,10 @@ class WorkerAppResponse(BaseModel):
 
     id: UUID = Field(..., description="Worker app ID")
     owner_id: str = Field(..., description="Instagram account ID")
-    app_name: str = Field(..., description="Application name")
+    owner_instagram_username: str = Field(
+        ..., description="Instagram username of the owner"
+    )
     base_url: str = Field(..., description="Base URL for HTTP requests")
-    webhook_path: str = Field(..., description="Webhook path")
-    queue_name: str = Field(..., description="Queue name for RabbitMQ routing")
-    is_active: bool = Field(..., description="Active status flag")
     created_at: datetime = Field(..., description="Created timestamp")
     updated_at: datetime = Field(..., description="Updated timestamp")
 
@@ -157,8 +124,11 @@ class WebhookLogResponse(BaseModel):
     webhook_id: str = Field(..., description="Unique webhook ID")
     owner_id: str = Field(..., description="Instagram account ID")
     worker_app_id: Optional[UUID] = Field(None, description="Target worker app ID")
-    target_app_name: Optional[str] = Field(None, description="Target app name")
-    processing_status: str = Field(..., description="Processing status")
+    target_owner_username: Optional[str] = Field(
+        None, description="Target Instagram username"
+    )
+    target_base_url: Optional[str] = Field(None, description="Target base URL")
+    status: str = Field(..., description="Processing status")
     error_message: Optional[str] = Field(None, description="Error messages")
     processing_time_ms: Optional[int] = Field(
         None, description="Processing time in milliseconds"
@@ -192,11 +162,8 @@ class MetricsResponse(BaseModel):
     webhook_total: int = Field(..., description="Total webhooks processed")
     webhook_success: int = Field(..., description="Successful webhooks")
     webhook_failed: int = Field(..., description="Failed webhooks")
-    webhook_routed: int = Field(..., description="Routed webhooks")
     avg_processing_time_ms: float = Field(..., description="Average processing time")
-    worker_apps_active: int = Field(..., description="Active worker apps")
-    worker_apps_total: int = Field(..., description="Total worker apps")
-    rabbitmq_queues: Dict[str, int] = Field(..., description="RabbitMQ queue sizes")
+    worker_apps_total: int = Field(..., description="Registered worker apps")
 
 
 class ErrorResponse(BaseModel):

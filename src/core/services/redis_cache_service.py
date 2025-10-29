@@ -20,7 +20,7 @@ class RedisCacheService:
 
     def __init__(
         self,
-        redis_url: str,
+        redis_url: Optional[str],
         default_ttl: int = 86400,  # 24 hours
     ):
         """
@@ -30,12 +30,21 @@ class RedisCacheService:
             redis_url: Redis connection URL (e.g., redis://localhost:6379/0)
             default_ttl: Default TTL in seconds for cached items
         """
-        self.redis_url = redis_url
+        self.redis_url = redis_url.strip() if redis_url else None
         self.default_ttl = default_ttl
         self._client: Optional[Redis] = None
 
+    @property
+    def is_configured(self) -> bool:
+        """Check whether Redis caching is configured."""
+        return bool(self.redis_url)
+
     async def connect(self) -> None:
         """Establish connection to Redis."""
+        if not self.is_configured:
+            logger.debug("Redis URL not configured; skipping connection")
+            return
+
         if self._client is None:
             try:
                 self._client = await redis_async.from_url(
@@ -56,8 +65,11 @@ class RedisCacheService:
             self._client = None
             logger.info("Redis connection closed")
 
-    async def get_client(self) -> Redis:
+    async def get_client(self) -> Optional[Redis]:
         """Get Redis client, connecting if necessary."""
+        if not self.is_configured:
+            return None
+
         if self._client is None:
             await self.connect()
         return self._client
@@ -75,6 +87,9 @@ class RedisCacheService:
         """
         try:
             client = await self.get_client()
+            if client is None:
+                return None
+
             key = self._media_key(media_id)
             owner_id = await client.get(key)
 
@@ -108,6 +123,9 @@ class RedisCacheService:
         """
         try:
             client = await self.get_client()
+            if client is None:
+                return False
+
             key = self._media_key(media_id)
             ttl = ttl or self.default_ttl
 
@@ -131,6 +149,9 @@ class RedisCacheService:
         """
         try:
             client = await self.get_client()
+            if client is None:
+                return False
+
             key = self._media_key(media_id)
             result = await client.delete(key)
 
@@ -156,6 +177,9 @@ class RedisCacheService:
         """
         try:
             client = await self.get_client()
+            if client is None:
+                return None
+
             key = self._worker_app_key(owner_id)
             data = await client.get(key)
 
@@ -166,7 +190,7 @@ class RedisCacheService:
                 logger.debug(f"Cache MISS: worker_app for owner_id={owner_id}")
                 return None
 
-        except (RedisError, json.JSONDecodeError) as e:
+        except (RedisError, json.JSONDecodeError, TypeError) as e:
             logger.warning(f"Redis error getting worker app: {e}")
             return None
 
@@ -189,6 +213,9 @@ class RedisCacheService:
         """
         try:
             client = await self.get_client()
+            if client is None:
+                return False
+
             key = self._worker_app_key(owner_id)
             ttl = ttl or self.default_ttl
 
@@ -196,7 +223,7 @@ class RedisCacheService:
             logger.debug(f"Cached worker_app for owner_id={owner_id} (TTL={ttl}s)")
             return True
 
-        except (RedisError, json.JSONEncodeError) as e:
+        except (RedisError, TypeError, ValueError) as e:
             logger.warning(f"Redis error setting worker app: {e}")
             return False
 
@@ -212,6 +239,9 @@ class RedisCacheService:
         """
         try:
             client = await self.get_client()
+            if client is None:
+                return False
+
             key = self._worker_app_key(owner_id)
             result = await client.delete(key)
 
@@ -229,6 +259,9 @@ class RedisCacheService:
         """Generic get operation."""
         try:
             client = await self.get_client()
+            if client is None:
+                return None
+
             return await client.get(key)
         except RedisError as e:
             logger.warning(f"Redis error on get({key}): {e}")
@@ -238,6 +271,9 @@ class RedisCacheService:
         """Generic set operation."""
         try:
             client = await self.get_client()
+            if client is None:
+                return False
+
             ttl = ttl or self.default_ttl
             await client.set(key, value, ex=ttl)
             return True
@@ -249,6 +285,9 @@ class RedisCacheService:
         """Generic delete operation."""
         try:
             client = await self.get_client()
+            if client is None:
+                return False
+
             result = await client.delete(key)
             return result > 0
         except RedisError as e:
@@ -259,6 +298,9 @@ class RedisCacheService:
         """Check if Redis is reachable."""
         try:
             client = await self.get_client()
+            if client is None:
+                return False
+
             await client.ping()
             return True
         except RedisError:

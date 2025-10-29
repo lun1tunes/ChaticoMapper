@@ -24,8 +24,6 @@ def upgrade() -> None:
         sa.Column("media_id", sa.String(length=100), nullable=False, comment="Instagram media ID"),
         sa.Column("owner_id", sa.String(length=255), nullable=False, comment="Instagram account ID of media owner"),
         sa.Column("owner_username", sa.String(length=100), nullable=True, comment="Instagram username of media owner"),
-        sa.Column("permalink", sa.Text(), nullable=True, comment="Media permalink URL"),
-        sa.Column("media_type", sa.String(length=50), nullable=True, comment="Media type (IMAGE, VIDEO, CAROUSEL_ALBUM)"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("media_id"),

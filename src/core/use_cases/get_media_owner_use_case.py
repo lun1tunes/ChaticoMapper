@@ -25,7 +25,7 @@ class GetMediaOwnerUseCase:
     def __init__(
         self,
         session: AsyncSession,
-        redis_cache: RedisCacheService,
+        redis_cache: Optional[RedisCacheService],
         instagram_api: InstagramAPIService,
     ):
         self.session = session
@@ -49,14 +49,15 @@ class GetMediaOwnerUseCase:
                 - error (str): Error message (if success=False)
         """
         # Step 1: Check Redis cache (fast path)
-        cached_owner_id = await self.redis_cache.get_media_owner(media_id)
-        if cached_owner_id:
-            logger.debug(f"Media owner from cache: media_id={media_id}")
-            return {
-                "success": True,
-                "owner_id": cached_owner_id,
-                "source": "cache",
-            }
+        if self.redis_cache:
+            cached_owner_id = await self.redis_cache.get_media_owner(media_id)
+            if cached_owner_id:
+                logger.debug("Media owner from cache: media_id=%s", media_id)
+                return {
+                    "success": True,
+                    "owner_id": cached_owner_id,
+                    "source": "cache",
+                }
 
         # Step 2: Check database
         media = await self.media_repo.get_by_media_id(media_id)
@@ -64,7 +65,8 @@ class GetMediaOwnerUseCase:
             logger.debug(f"Media owner from database: media_id={media_id}")
 
             # Cache for future lookups
-            await self.redis_cache.set_media_owner(media_id, media.owner_id)
+            if self.redis_cache:
+                await self.redis_cache.set_media_owner(media_id, media.owner_id)
 
             return {
                 "success": True,
@@ -116,7 +118,8 @@ class GetMediaOwnerUseCase:
             await self.session.rollback()
 
         # Cache in Redis
-        await self.redis_cache.set_media_owner(media_id, owner_id)
+        if self.redis_cache:
+            await self.redis_cache.set_media_owner(media_id, owner_id)
 
         return {
             "success": True,

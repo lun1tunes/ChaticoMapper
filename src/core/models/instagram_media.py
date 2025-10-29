@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.models.base import Base
@@ -25,10 +25,6 @@ class InstagramMedia(Base):
     )
     owner_username: Mapped[str | None] = mapped_column(
         String(100), nullable=True, comment="Instagram username of media owner"
-    )
-    permalink: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Media permalink URL")
-    media_type: Mapped[str | None] = mapped_column(
-        String(50), nullable=True, comment="Media type (IMAGE, VIDEO, CAROUSEL_ALBUM)"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

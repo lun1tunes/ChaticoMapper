@@ -31,31 +31,16 @@ def upgrade() -> None:
             comment="Instagram account ID",
         ),
         sa.Column(
-            "app_name",
+            "owner_instagram_username",
             sa.String(length=255),
             nullable=False,
-            comment="Application name for identification",
+            comment="Instagram username of the owner",
         ),
         sa.Column(
             "base_url",
             sa.String(length=500),
             nullable=False,
-            comment="Base URL for HTTP requests",
-        ),
-        sa.Column(
-            "webhook_path",
-            sa.String(length=255),
-            nullable=False,
-            comment="Webhook path (default: /webhook)",
-        ),
-        sa.Column(
-            "queue_name",
-            sa.String(length=255),
-            nullable=False,
-            comment="Queue name for RabbitMQ routing",
-        ),
-        sa.Column(
-            "is_active", sa.Boolean(), nullable=False, comment="Active status flag"
+            comment="Base URL for forwarding Instagram webhooks",
         ),
         sa.Column(
             "created_at",
@@ -77,15 +62,6 @@ def upgrade() -> None:
     # Create indexes for worker_apps
     op.create_index("ix_worker_apps_id", "worker_apps", ["id"], unique=False)
     op.create_index("ix_worker_apps_owner_id", "worker_apps", ["owner_id"], unique=True)
-    op.create_index(
-        "idx_worker_apps_owner_id_active",
-        "worker_apps",
-        ["owner_id", "is_active"],
-        unique=False,
-    )
-    op.create_index(
-        "idx_worker_apps_queue_name", "worker_apps", ["queue_name"], unique=False
-    )
 
     # Create webhook_logs table
     op.create_table(
@@ -110,13 +86,19 @@ def upgrade() -> None:
             comment="Target worker app ID",
         ),
         sa.Column(
-            "target_app_name",
+            "target_owner_username",
             sa.String(length=255),
             nullable=True,
-            comment="Target app name",
+            comment="Target Instagram username",
         ),
         sa.Column(
-            "processing_status",
+            "target_base_url",
+            sa.String(length=500),
+            nullable=True,
+            comment="Target base URL",
+        ),
+        sa.Column(
+            "status",
             sa.String(length=50),
             nullable=False,
             comment="Processing status (success/failed/routed)",
@@ -154,10 +136,7 @@ def upgrade() -> None:
         "ix_webhook_logs_worker_app_id", "webhook_logs", ["worker_app_id"], unique=False
     )
     op.create_index(
-        "ix_webhook_logs_processing_status",
-        "webhook_logs",
-        ["processing_status"],
-        unique=False,
+        "ix_webhook_logs_status", "webhook_logs", ["status"], unique=False
     )
     op.create_index(
         "ix_webhook_logs_created_at", "webhook_logs", ["created_at"], unique=False
@@ -165,13 +144,13 @@ def upgrade() -> None:
     op.create_index(
         "idx_webhook_logs_owner_status",
         "webhook_logs",
-        ["owner_id", "processing_status"],
+        ["owner_id", "status"],
         unique=False,
     )
     op.create_index(
         "idx_webhook_logs_worker_app_status",
         "webhook_logs",
-        ["worker_app_id", "processing_status"],
+        ["worker_app_id", "status"],
         unique=False,
     )
 
@@ -182,7 +161,7 @@ def downgrade() -> None:
     op.drop_index("idx_webhook_logs_worker_app_status", table_name="webhook_logs")
     op.drop_index("idx_webhook_logs_owner_status", table_name="webhook_logs")
     op.drop_index("ix_webhook_logs_created_at", table_name="webhook_logs")
-    op.drop_index("ix_webhook_logs_processing_status", table_name="webhook_logs")
+    op.drop_index("ix_webhook_logs_status", table_name="webhook_logs")
     op.drop_index("ix_webhook_logs_worker_app_id", table_name="webhook_logs")
     op.drop_index("ix_webhook_logs_owner_id", table_name="webhook_logs")
     op.drop_index("ix_webhook_logs_webhook_id", table_name="webhook_logs")
@@ -190,8 +169,6 @@ def downgrade() -> None:
     op.drop_table("webhook_logs")
 
     # Drop worker_apps table
-    op.drop_index("idx_worker_apps_queue_name", table_name="worker_apps")
-    op.drop_index("idx_worker_apps_owner_id_active", table_name="worker_apps")
     op.drop_index("ix_worker_apps_owner_id", table_name="worker_apps")
     op.drop_index("ix_worker_apps_id", table_name="worker_apps")
     op.drop_table("worker_apps")
