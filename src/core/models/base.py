@@ -1,11 +1,14 @@
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, declared_attr
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import DateTime, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
+    """Base class for all SQLAlchemy models."""
+
     __abstract__ = True
 
-    @declared_attr.directive
-    def __tablename__(cls) -> str:
-        return f"{cls.__name__.lower()}s"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
+    # Type annotation registry for Pydantic v2 compatibility
+    type_annotation_map: dict[type, Any] = {}

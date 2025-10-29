@@ -1,9 +1,38 @@
 """Environment configuration for Chatico Mapper App."""
 
+from functools import lru_cache
 from typing import Optional
 
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class InstagramSettings(BaseModel):
+    """Instagram API settings."""
+
+    app_id: str = Field(..., description="Instagram App ID")
+    app_secret: str = Field(..., description="Instagram App Secret")
+    access_token: str = Field(..., description="Instagram Access Token")
+    api_base_url: str = Field(
+        default="https://graph.instagram.com/v23.0", description="Instagram API base URL"
+    )
+    api_timeout: int = Field(default=30, description="Instagram API timeout in seconds")
+    rate_limit: int = Field(default=200, description="Instagram API rate limit per hour")
+
+
+class WebhookSettings(BaseModel):
+    """Webhook security settings."""
+
+    secret: str = Field(..., description="Webhook verification secret (app_secret)")
+    verify_token: str = Field(..., description="Webhook verification token")
+    max_size: int = Field(default=1048576, description="Max webhook payload size (1MB)")
+
+
+class RedisSettings(BaseModel):
+    """Redis cache settings."""
+
+    url: Optional[str] = Field(default=None, description="Redis URL for caching")
+    ttl: int = Field(default=86400, description="Redis TTL in seconds (24 hours)")
 
 
 class Settings(BaseSettings):
@@ -26,9 +55,10 @@ class Settings(BaseSettings):
     )
     database_max_overflow: int = Field(default=30, description="Database max overflow")
 
-    # Redis
-    redis_url: Optional[str] = Field(default=None, description="Redis URL for caching")
-    redis_ttl: int = Field(default=3600, description="Redis TTL in seconds")
+    # Nested settings
+    instagram: InstagramSettings
+    webhook: WebhookSettings
+    redis: RedisSettings
 
     # RabbitMQ
     rabbitmq_url: str = Field(..., description="RabbitMQ connection URL")
@@ -42,27 +72,6 @@ class Settings(BaseSettings):
         default=86400, description="Message TTL in seconds (24 hours)"
     )
     rabbitmq_max_retries: int = Field(default=5, description="Max retry attempts")
-
-    # Instagram API
-    instagram_app_id: str = Field(..., description="Instagram App ID")
-    instagram_app_secret: str = Field(..., description="Instagram App Secret")
-    instagram_access_token: str = Field(..., description="Instagram Access Token")
-    instagram_api_base_url: str = Field(
-        default="https://graph.instagram.com", description="Instagram API base URL"
-    )
-    instagram_api_timeout: int = Field(
-        default=30, description="Instagram API timeout in seconds"
-    )
-    instagram_rate_limit: int = Field(
-        default=200, description="Instagram API rate limit per hour"
-    )
-
-    # Webhook Security
-    webhook_secret: str = Field(..., description="Webhook verification secret")
-    webhook_verify_token: str = Field(..., description="Webhook verification token")
-    webhook_max_size: int = Field(
-        default=1048576, description="Max webhook payload size (1MB)"
-    )
 
     # Security
     secret_key: str = Field(..., description="Application secret key")
@@ -110,20 +119,15 @@ class Settings(BaseSettings):
             raise ValueError("RabbitMQ URL must start with amqp:// or amqps://")
         return v
 
-    @field_validator("redis_url")
-    @classmethod
-    def validate_redis_url(cls, v):
-        """Validate Redis URL."""
-        if v is not None and not v.startswith(("redis://", "rediss://")):
-            raise ValueError("Redis URL must start with redis:// or rediss://")
-        return v
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        env_nested_delimiter="__",  # Allow INSTAGRAM__APP_ID format
     )
 
 
-# Global settings instance
-settings = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings()
