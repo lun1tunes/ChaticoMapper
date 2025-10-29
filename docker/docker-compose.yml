@@ -1,8 +1,10 @@
+name: mapper-app
+
 services:
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: chatico-mapper-postgres
+    container_name: mapper-postgres
     environment:
       POSTGRES_DB: chatico_mapper
       POSTGRES_USER: chatico_user
@@ -13,7 +15,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     networks:
-      - chatico-network
+      - mapper-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U chatico_user -d chatico_mapper"]
       interval: 10s
@@ -25,7 +27,7 @@ services:
   # Redis Cache
   redis:
     image: redis:7-alpine
-    container_name: chatico-mapper-redis
+    container_name: mapper-redis
     command: >
       redis-server
       --appendonly yes
@@ -38,7 +40,7 @@ services:
     ports:
       - "${REDIS_PORT:-6380}:6379"
     networks:
-      - chatico-network
+      - mapper-network
     healthcheck:
       test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 10s
@@ -53,7 +55,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     image: chatico-mapper-app:${VERSION:-latest}
-    container_name: chatico-mapper-app
+    container_name: mapper-app
     env_file:
       - .env
     environment:
@@ -63,7 +65,7 @@ services:
     ports:
       - "${APP_PORT:-8100}:8100"
     networks:
-      - chatico-network
+      - mapper-network
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,11 +84,11 @@ services:
 volumes:
   postgres_data:
     driver: local
-    name: chatico_mapper_postgres_data
+    name: mapper_app_postgres_data
   redis_data:
     driver: local
-    name: chatico_mapper_redis_data
+    name: mapper_app_redis_data
 
 networks:
-  chatico-network:
+  mapper-network:
     driver: bridge
