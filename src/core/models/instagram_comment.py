@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.models.base import Base
@@ -42,7 +42,7 @@ class InstagramComment(Base):
         nullable=False, comment="Unix timestamp from webhook entry"
     )
     raw_webhook_data: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, default=dict, comment="Raw webhook payload for audit"
+        JSON, nullable=False, default=dict, comment="Raw webhook payload for audit"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -1,0 +1,1 @@
+"""Chatico Mapper App package."""

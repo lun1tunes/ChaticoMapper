@@ -1,10 +1,11 @@
 """Database helper for async SQLAlchemy session management."""
 
+from __future__ import annotations
+
 import inspect
 from asyncio import current_task
 
 from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
     AsyncSession,
     async_scoped_session,
     async_sessionmaker,
@@ -17,21 +18,10 @@ from src.core.config import get_settings
 class DatabaseHelper:
     """Helper for managing database connections and sessions."""
 
-    def __init__(self, url: str, echo: bool = False, pool_size: int = 20, max_overflow: int = 30):
-        """
-        Initialize database helper.
-
-        Args:
-            url: Database connection URL
-            echo: Echo SQL queries
-            pool_size: Connection pool size
-            max_overflow: Max overflow connections
-        """
-        self.engine: AsyncEngine = create_async_engine(
+    def __init__(self, url: str, echo: bool = False):
+        self.engine = create_async_engine(
             url=url,
             echo=echo,
-            pool_size=pool_size,
-            max_overflow=max_overflow,
         )
         self.session_factory = async_sessionmaker(
             bind=self.engine,
@@ -39,10 +29,6 @@ class DatabaseHelper:
             autocommit=False,
             expire_on_commit=False,
         )
-
-    async def dispose(self) -> None:
-        """Dispose of the engine and close all connections."""
-        await self.engine.dispose()
 
     async def session_dependency(self) -> AsyncSession:  # type: ignore
         """FastAPI dependency for database sessions."""
@@ -68,12 +54,12 @@ class DatabaseHelper:
             scopefunc=current_task,
         )
 
+    async def dispose(self) -> None:
+        await self.engine.dispose()
 
-# Global database helper instance
+
 settings = get_settings()
 db_helper = DatabaseHelper(
     url=settings.database_url,
     echo=settings.debug,
-    pool_size=settings.database_pool_size,
-    max_overflow=settings.database_max_overflow,
 )

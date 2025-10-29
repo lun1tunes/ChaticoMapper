@@ -1,9 +1,13 @@
 """Main FastAPI application for Chatico Mapper App."""
 
+import hashlib
+import hmac
 import logging
+import os
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -11,7 +15,6 @@ from sqlalchemy import text
 from src.api_v1 import webhook, worker_apps
 from src.core.config import get_settings
 from src.core.logging_config import setup_logging
-from src.core.middleware.webhook_verification import WebhookVerificationMiddleware
 from src.core.models.db_helper import db_helper
 
 # Configure logging based on environment settings early during startup
@@ -83,15 +86,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Webhook verification middleware
-    # This verifies Instagram webhook signatures using HMAC-SHA256
-    app.add_middleware(
-        WebhookVerificationMiddleware,
-        app_secret=settings.webhook.secret,
-        verify_webhook_paths=["/webhook", "/webhook/"],
-        development_mode=settings.debug,
-    )
-
     # ========================================
     # Routers
     # ========================================
@@ -161,6 +155,56 @@ def create_app() -> FastAPI:
 
 # Create application instance
 app = create_app()
+
+
+@app.middleware("http")
+async def verify_webhook_signature(request: Request, call_next):
+    """
+    Verify Instagram webhook signatures for POST requests to /api/v1/webhook.
+    """
+    trace_id = request.headers.get("X-Trace-Id") or str(uuid.uuid4())
+    request.state.trace_id = trace_id
+
+    webhook_path = "/api/v1/webhook"
+    if request.method == "POST" and request.url.path.rstrip("/") == webhook_path:
+        signature_256 = request.headers.get("X-Hub-Signature-256")
+        signature_1 = request.headers.get("X-Hub-Signature")
+        signature = signature_256 or signature_1
+
+        body = await request.body()
+
+        if signature:
+            if signature_256:
+                expected = "sha256=" + hmac.new(
+                    settings.webhook.secret.encode(),
+                    body,
+                    hashlib.sha256,
+                ).hexdigest()
+            else:
+                expected = "sha1=" + hmac.new(
+                    settings.webhook.secret.encode(),
+                    body,
+                    hashlib.sha1,
+                ).hexdigest()
+
+            if not hmac.compare_digest(signature, expected):
+                logger.error("Signature verification failed for webhook request")
+                return JSONResponse(status_code=401, content={"detail": "Invalid signature"})
+        else:
+            if settings.debug or os.getenv("DEVELOPMENT_MODE", "false").lower() == "true":
+                logger.warning("Development mode: allowing webhook without signature header")
+            else:
+                logger.error("Missing webhook signature header")
+                return JSONResponse(status_code=401, content={"detail": "Missing signature header"})
+
+        async def receive():
+            return {"type": "http.request", "body": body}
+
+        request._receive = receive
+
+    response = await call_next(request)
+    response.headers["X-Trace-Id"] = trace_id
+    return response
 
 
 if __name__ == "__main__":

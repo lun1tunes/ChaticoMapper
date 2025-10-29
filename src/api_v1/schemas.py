@@ -1,62 +1,128 @@
 """Pydantic schemas for Chatico Mapper App."""
 
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl, ConfigDict
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
 
-class InstagramWebhookEntry(BaseModel):
-    """Instagram webhook entry schema."""
-
-    id: str = Field(..., description="Entry ID")
-    time: int = Field(..., description="Timestamp")
-    changes: List[Dict[str, Any]] = Field(..., description="Change data")
+# =============================================================================
+# Webhook payload schemas (copied from instachatico-app)
+# =============================================================================
 
 
-class InstagramWebhookPayload(BaseModel):
-    """Instagram webhook payload schema."""
+class WebhookVerification(BaseModel):
+    """Webhook verification challenge from Instagram."""
 
-    object: str = Field(..., description="Object type")
-    entry: List[InstagramWebhookEntry] = Field(..., description="Webhook entries")
-
-
-# Alias for backward compatibility
-WebhookPayload = InstagramWebhookPayload
+    hub_mode: Literal["subscribe"] = Field(..., description="Must be 'subscribe' for verification")
+    hub_challenge: str = Field(..., min_length=1, description="Challenge string to echo back")
+    hub_verify_token: str = Field(..., min_length=1, description="Verification token")
 
 
-class InstagramComment(BaseModel):
-    """Instagram comment schema."""
+class CommentAuthor(BaseModel):
+    """Instagram user who created the comment."""
 
-    id: str = Field(..., description="Comment ID")
-    media_id: str = Field(..., description="Associated media ID")
-    text: Optional[str] = Field(None, description="Comment text")
-    from_user: Optional[Dict[str, Any]] = Field(None, description="Comment author")
+    id: str = Field(..., min_length=1, description="Instagram user ID")
+    username: str = Field(..., min_length=1, max_length=30, description="Instagram username")
 
-
-class InstagramMedia(BaseModel):
-    """Instagram media schema."""
-
-    id: str = Field(..., description="Media ID")
-    owner: Optional[Dict[str, Any]] = Field(None, description="Media owner information")
-    media_type: Optional[str] = Field(None, description="Media type")
-    media_url: Optional[str] = Field(None, description="Media URL")
-    permalink: Optional[str] = Field(None, description="Media permalink")
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        """Ensure username doesn't contain invalid characters."""
+        if not v.replace(".", "").replace("_", "").isalnum():
+            raise ValueError("Username contains invalid characters")
+        return v.lower()
 
 
-class RoutingRequest(BaseModel):
-    """Webhook routing request schema."""
+class CommentMedia(BaseModel):
+    """Instagram media (post) associated with the comment."""
 
-    webhook_payload: InstagramWebhookPayload = Field(
-        ..., description="Original webhook payload"
-    )
-    owner_id: str = Field(..., description="Instagram account ID")
-    target_base_url: str = Field(..., description="Target worker app URL")
-    target_owner_username: Optional[str] = Field(
-        None, description="Instagram username of the target owner"
-    )
-    webhook_id: str = Field(..., description="Unique webhook ID")
+    id: str = Field(..., min_length=1, description="Instagram media ID")
+    media_product_type: Optional[str] = Field(None, description="Media product type (e.g., 'FEED', 'REELS')")
+
+
+class CommentValue(BaseModel):
+    """Comment data from Instagram webhook."""
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
+
+    from_: CommentAuthor = Field(..., alias="from", description="Comment author")
+    media: CommentMedia = Field(..., description="Associated media")
+    id: str = Field(..., min_length=1, description="Comment ID")
+    parent_id: Optional[str] = Field(None, description="Parent comment ID for replies")
+    text: str = Field(..., min_length=1, max_length=2200, description="Comment text")
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, v: str) -> str:
+        """Ensure text is not empty after stripping."""
+        if not v.strip():
+            raise ValueError("Comment text cannot be empty")
+        return v
+
+    def is_reply(self) -> bool:
+        """Check if this comment is a reply to another comment."""
+        return self.parent_id is not None
+
+    def is_from_user(self, username: str) -> bool:
+        """Check if comment is from a specific user."""
+        return self.from_.username.lower() == username.lower()
+
+
+class CommentChange(BaseModel):
+    """Change notification from Instagram webhook."""
+
+    field: Literal["comments"] = Field(..., description="Field that changed (must be 'comments')")
+    value: CommentValue = Field(..., description="Comment data")
+
+
+class WebhookEntry(BaseModel):
+    """Entry in Instagram webhook payload."""
+
+    id: str = Field(..., min_length=1, description="Instagram business account ID")
+    time: int = Field(..., gt=0, description="Unix timestamp of the event")
+    changes: List[CommentChange] = Field(..., min_length=1, description="List of changes")
+
+    @field_validator("time")
+    @classmethod
+    def validate_timestamp(cls, v: int) -> int:
+        """Ensure timestamp is reasonable (not too old, not in future)."""
+        now = int(datetime.utcnow().timestamp())
+        if v > now + 3600:
+            raise ValueError("Timestamp is too far in the future")
+        if v < now - 86400 * 7:
+            raise ValueError("Timestamp is too old")
+        return v
+
+    def get_timestamp(self) -> datetime:
+        """Convert Unix timestamp to datetime object."""
+        return datetime.fromtimestamp(self.time)
+
+
+class WebhookPayload(BaseModel):
+    """Instagram webhook payload."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    entry: List[WebhookEntry] = Field(..., min_length=1, description="List of entries")
+    object: Literal["instagram"] = Field(..., description="Object type (must be 'instagram')")
+
+    def get_all_comments(self) -> List[tuple[WebhookEntry, CommentValue]]:
+        """Extract all comments from the payload with their entry context."""
+        comments: List[tuple[WebhookEntry, CommentValue]] = []
+        for entry in self.entry:
+            for change in entry.changes:
+                if change.field == "comments":
+                    comments.append((entry, change.value))
+        return comments
+
+
+# =============================================================================
+# Routing responses
+# =============================================================================
 
 
 class RoutingResponse(BaseModel):
@@ -72,6 +138,11 @@ class RoutingResponse(BaseModel):
     webhook_id: str = Field(..., description="Unique webhook ID")
 
 
+# =============================================================================
+# Worker app schemas
+# =============================================================================
+
+
 class WorkerAppCreate(BaseModel):
     """Worker app creation schema."""
 
@@ -81,7 +152,7 @@ class WorkerAppCreate(BaseModel):
     owner_instagram_username: str = Field(
         ..., description="Instagram username of the owner", min_length=1, max_length=255
     )
-    base_url: HttpUrl = Field(..., description="Base URL for HTTP requests")
+    base_url: AnyHttpUrl = Field(..., description="Base URL for HTTP requests")
 
 
 class WorkerAppUpdate(BaseModel):
@@ -90,7 +161,7 @@ class WorkerAppUpdate(BaseModel):
     owner_instagram_username: Optional[str] = Field(
         None, description="Instagram username of the owner", min_length=1, max_length=255
     )
-    base_url: Optional[HttpUrl] = Field(None, description="Base URL for HTTP requests")
+    base_url: Optional[AnyHttpUrl] = Field(None, description="Base URL for HTTP requests")
 
 
 class WorkerAppResponse(BaseModel):
@@ -117,43 +188,9 @@ class WorkerAppListResponse(BaseModel):
     size: int = Field(..., description="Page size")
 
 
-class WebhookLogResponse(BaseModel):
-    """Webhook log response schema."""
-
-    id: UUID = Field(..., description="Log ID")
-    webhook_id: str = Field(..., description="Unique webhook ID")
-    owner_id: str = Field(..., description="Instagram account ID")
-    worker_app_id: Optional[UUID] = Field(None, description="Target worker app ID")
-    target_owner_username: Optional[str] = Field(
-        None, description="Target Instagram username"
-    )
-    target_base_url: Optional[str] = Field(None, description="Target base URL")
-    status: str = Field(..., description="Processing status")
-    error_message: Optional[str] = Field(None, description="Error messages")
-    processing_time_ms: Optional[int] = Field(
-        None, description="Processing time in milliseconds"
-    )
-    created_at: datetime = Field(..., description="Created timestamp")
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class WebhookLogListResponse(BaseModel):
-    """Webhook log list response schema."""
-
-    items: List[WebhookLogResponse] = Field(..., description="List of webhook logs")
-    total: int = Field(..., description="Total count")
-    page: int = Field(..., description="Current page")
-    size: int = Field(..., description="Page size")
-
-
-class HealthResponse(BaseModel):
-    """Health check response schema."""
-
-    status: str = Field(..., description="Health status")
-    timestamp: datetime = Field(..., description="Check timestamp")
-    version: str = Field(..., description="Application version")
-    services: Dict[str, str] = Field(..., description="Service statuses")
+# =============================================================================
+# Monitoring responses
+# =============================================================================
 
 
 class MetricsResponse(BaseModel):
