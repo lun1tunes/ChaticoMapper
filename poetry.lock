@@ -56,18 +56,24 @@ trio = ["trio (>=0.31.0)"]
 
 [[package]]
 name = "argon2-cffi"
-version = "25.1.0"
+version = "23.1.0"
 description = "Argon2 for Python"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.7"
 groups = ["main"]
 files = [
-    {file = "argon2_cffi-25.1.0-py3-none-any.whl", hash = "sha256:fdc8b074db390fccb6eb4a3604ae7231f219aa669a2652e0f20e16ba513d5741"},
-    {file = "argon2_cffi-25.1.0.tar.gz", hash = "sha256:694ae5cc8a42f4c4e2bf2ca0e64e51e23a040c6a517a85074683d3959e1346c1"},
+    {file = "argon2_cffi-23.1.0-py3-none-any.whl", hash = "sha256:c670642b78ba29641818ab2e68bd4e6a78ba53b7eff7b4c3815ae16abf91c7ea"},
+    {file = "argon2_cffi-23.1.0.tar.gz", hash = "sha256:879c3e79a2729ce768ebb7d36d4609e3a78a4ca2ec3a9f12286ca057e3d0db08"},
 ]
 
 [package.dependencies]
 argon2-cffi-bindings = "*"
+
+[package.extras]
+dev = ["argon2-cffi[tests,typing]", "tox (>4)"]
+docs = ["furo", "myst-parser", "sphinx", "sphinx-copybutton", "sphinx-notfound-page"]
+tests = ["hypothesis", "pytest"]
+typing = ["mypy"]
 
 [[package]]
 name = "argon2-cffi-bindings"
@@ -2833,4 +2839,4 @@ dev = ["black", "factory-boy", "faker", "flake8", "freezegun", "httpx", "isort",
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<4.0"
-content-hash = "fc743e42f40dcaa64e1f4df45399fb92eb6ea08a5b77c86de7ca067416e3d5e3"
+content-hash = "ff9865f702465340a93db82da47c940221c2e5813516097826ed2a9b9e5f7d64"
