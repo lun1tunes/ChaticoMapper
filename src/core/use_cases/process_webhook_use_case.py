@@ -12,7 +12,6 @@ from src.core.repositories.instagram_comment_repository import InstagramCommentR
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 from src.core.services.redis_cache_service import RedisCacheService
 from src.core.use_cases.forward_webhook_use_case import ForwardWebhookUseCase
-from src.core.use_cases.get_media_owner_use_case import GetMediaOwnerUseCase
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,7 @@ class ProcessWebhookUseCase:
 
     Workflow:
     1. Extract comment data from webhook payload
-    2. Get media owner_id (cache -> DB -> API)
+    2. Resolve owner_id directly from webhook entry
     3. Find active worker app for owner
     4. Store comment in database
     5. Forward webhook to worker app
@@ -33,12 +32,10 @@ class ProcessWebhookUseCase:
     def __init__(
         self,
         session: AsyncSession,
-        get_media_owner_uc: GetMediaOwnerUseCase,
         forward_webhook_uc: ForwardWebhookUseCase,
         redis_cache: Optional[RedisCacheService] = None,
     ):
         self.session = session
-        self.get_media_owner_uc = get_media_owner_uc
         self.forward_webhook_uc = forward_webhook_uc
         self.redis_cache = redis_cache
         self.worker_app_repo = WorkerAppRepository(session)
@@ -119,6 +116,7 @@ class ProcessWebhookUseCase:
         """
         comment_id = comment_data.get("comment_id")
         media_id = comment_data.get("media_id")
+        owner_id = comment_data.get("owner_id")
 
         # Check if comment already processed
         if await self.comment_repo.exists_by_comment_id(comment_id):
@@ -129,20 +127,14 @@ class ProcessWebhookUseCase:
                 "comment_id": comment_id,
             }
 
-        # Get media owner
-        owner_result = await self.get_media_owner_uc.execute(media_id)
-
-        if not owner_result.get("success"):
-            error = f"Failed to get media owner for media_id={media_id}"
+        if not owner_id:
+            error = f"Missing owner_id in webhook entry for comment_id={comment_id}"
             logger.error(error)
             return {
                 "success": False,
                 "error": error,
                 "comment_id": comment_id,
             }
-
-        owner_id = owner_result.get("owner_id")
-        logger.debug(f"Resolved owner_id={owner_id} for media_id={media_id}")
 
         # Get worker app (with caching)
         worker_app = await self._get_worker_app_cached(owner_id)
@@ -241,6 +233,7 @@ class ProcessWebhookUseCase:
         comment = InstagramComment(
             comment_id=comment_data["comment_id"],
             media_id=comment_data["media_id"],
+            owner_id=comment_data["owner_id"],
             user_id=comment_data["user_id"],
             username=comment_data["username"],
             text=comment_data["text"],
@@ -265,6 +258,7 @@ class ProcessWebhookUseCase:
         comments = []
 
         for entry in webhook_payload.get("entry", []):
+            owner_id = entry.get("id")
             entry_timestamp = entry.get("time", 0)
 
             for change in entry.get("changes", []):
@@ -282,13 +276,14 @@ class ProcessWebhookUseCase:
                 text = value.get("text", "")
                 parent_id = value.get("parent_id")
 
-                if not all([comment_id, media_id, user_id, username]):
+                if not all([comment_id, owner_id, user_id, username]):
                     logger.warning(f"Incomplete comment data, skipping: {value}")
                     continue
 
                 comments.append({
                     "comment_id": comment_id,
                     "media_id": media_id,
+                    "owner_id": owner_id,
                     "user_id": user_id,
                     "username": username,
                     "text": text,

@@ -50,17 +50,8 @@ from src.core.config import get_settings  # noqa: E402
 
 get_settings.cache_clear()
 
-from src.core.dependencies import (  # noqa: E402
-    get_instagram_api_service,
-    get_redis_cache_service,
-    get_session,
-)
-from src.core.models import (  # noqa: E402,F401
-    instagram_comment,
-    instagram_media,
-    webhook_log,
-    worker_app,
-)
+from src.core.dependencies import get_redis_cache_service, get_session  # noqa: E402
+from src.core.models import instagram_comment, webhook_log, worker_app  # noqa: E402,F401
 from src.core.models.base import Base  # noqa: E402
 from src.core.models.db_helper import db_helper  # noqa: E402
 from src.main import app  # noqa: E402
@@ -106,19 +97,6 @@ async def db_session(prepare_database: None) -> AsyncGenerator[AsyncSession, Non
 # Dependency overrides
 # ---------------------------------------------------------------------------
 
-class _DummyInstagramAPI:
-    async def get_media_owner(self, media_id: str) -> dict:
-        return {
-            "success": True,
-            "owner_id": f"owner-{media_id}",
-            "username": f"user_{media_id}",
-            "status_code": 200,
-        }
-
-    async def close(self) -> None:  # pragma: no cover - nothing to clean up
-        pass
-
-
 @pytest.fixture(autouse=True)
 def override_dependencies() -> Generator[None, None, None]:
     """Override FastAPI dependencies so the app uses the test resources."""
@@ -130,12 +108,8 @@ def override_dependencies() -> Generator[None, None, None]:
     async def _get_redis_override() -> AsyncGenerator[None, None]:
         yield None
 
-    async def _get_instagram_api_override() -> AsyncGenerator[_DummyInstagramAPI, None]:
-        yield _DummyInstagramAPI()
-
     app.dependency_overrides[get_session] = _get_session_override
     app.dependency_overrides[get_redis_cache_service] = _get_redis_override
-    app.dependency_overrides[get_instagram_api_service] = _get_instagram_api_override
 
     try:
         yield

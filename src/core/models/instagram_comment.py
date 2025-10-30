@@ -1,16 +1,12 @@
 """Instagram Comment model for storing webhook comment data."""
 
 from datetime import datetime
-from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, String, Text, func
 from sqlalchemy.types import JSON
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.models.base import Base
-
-if TYPE_CHECKING:
-    from src.core.models.instagram_media import InstagramMedia
 
 
 class InstagramComment(Base):
@@ -23,10 +19,15 @@ class InstagramComment(Base):
     )
     media_id: Mapped[str] = mapped_column(
         String(100),
-        ForeignKey("instagram_media.media_id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="Instagram media ID provided in webhook payload",
+    )
+    owner_id: Mapped[str] = mapped_column(
+        String(255),
         nullable=False,
         index=True,
-        comment="Instagram media ID",
+        comment="Instagram business account ID from webhook entry",
     )
     user_id: Mapped[str] = mapped_column(
         String(255), nullable=False, index=True, comment="Comment author's Instagram user ID"
@@ -48,9 +49,6 @@ class InstagramComment(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    # Relationships
-    media: Mapped["InstagramMedia"] = relationship("InstagramMedia", back_populates="comments")
-
     @property
     def comment_datetime(self) -> datetime:
         """Convert Unix timestamp to datetime."""
@@ -62,4 +60,7 @@ class InstagramComment(Base):
         return self.parent_id is not None
 
     def __repr__(self) -> str:
-        return f"<InstagramComment(comment_id={self.comment_id}, username={self.username})>"
+        return (
+            f"<InstagramComment(comment_id={self.comment_id}, "
+            f"owner_id={self.owner_id}, username={self.username})>"
+        )

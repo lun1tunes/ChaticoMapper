@@ -14,15 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import Settings, get_settings
 from src.core.models.db_helper import db_helper
 from src.core.models.user import User
-from src.core.repositories.user_repository import UserRepository
-from src.core.repositories.worker_app_repository import WorkerAppRepository
-from src.core.repositories.instagram_media_repository import InstagramMediaRepository
 from src.core.repositories.instagram_comment_repository import InstagramCommentRepository
+from src.core.repositories.user_repository import UserRepository
 from src.core.repositories.webhook_log_repository import WebhookLogRepository
+from src.core.repositories.worker_app_repository import WorkerAppRepository
 from src.core.services.redis_cache_service import RedisCacheService
-from src.core.services.instagram_api_service import InstagramAPIService
 from src.core.services.security import TokenDecodeError, safe_decode_token
-from src.core.use_cases.get_media_owner_use_case import GetMediaOwnerUseCase
 from src.core.use_cases.forward_webhook_use_case import ForwardWebhookUseCase
 from src.core.use_cases.process_webhook_use_case import ProcessWebhookUseCase
 from src.api_v1.schemas import TokenData
@@ -54,13 +51,6 @@ def get_worker_app_repository(
 ) -> WorkerAppRepository:
     """Get WorkerAppRepository instance."""
     return WorkerAppRepository(session)
-
-
-def get_instagram_media_repository(
-    session: Annotated[AsyncSession, Depends(get_session)]
-) -> InstagramMediaRepository:
-    """Get InstagramMediaRepository instance."""
-    return InstagramMediaRepository(session)
 
 
 def get_instagram_comment_repository(
@@ -116,44 +106,6 @@ async def get_redis_cache_service(
         await service.disconnect()
 
 
-async def get_instagram_api_service(
-    settings: Annotated[Settings, Depends(get_settings)]
-) -> AsyncGenerator[InstagramAPIService, None]:
-    """
-    Get InstagramAPIService instance with connection management.
-
-    Yields:
-        InstagramAPIService instance
-    """
-    service = InstagramAPIService(
-        access_token=settings.instagram.access_token,
-        api_base_url=settings.instagram.api_base_url,
-        timeout=settings.instagram.api_timeout,
-    )
-    try:
-        yield service
-    finally:
-        await service.close()
-
-
-# ============================================================================
-# Use Case Dependencies
-# ============================================================================
-
-
-def get_media_owner_use_case(
-    session: Annotated[AsyncSession, Depends(get_session)],
-    redis_cache: Annotated[Optional[RedisCacheService], Depends(get_redis_cache_service)],
-    instagram_api: Annotated[InstagramAPIService, Depends(get_instagram_api_service)],
-) -> GetMediaOwnerUseCase:
-    """Get GetMediaOwnerUseCase instance with all dependencies."""
-    return GetMediaOwnerUseCase(
-        session=session,
-        redis_cache=redis_cache,
-        instagram_api=instagram_api,
-    )
-
-
 def get_forward_webhook_use_case(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ForwardWebhookUseCase:
@@ -166,14 +118,12 @@ def get_forward_webhook_use_case(
 
 def get_process_webhook_use_case(
     session: Annotated[AsyncSession, Depends(get_session)],
-    get_media_owner_uc: Annotated[GetMediaOwnerUseCase, Depends(get_media_owner_use_case)],
     forward_webhook_uc: Annotated[ForwardWebhookUseCase, Depends(get_forward_webhook_use_case)],
     redis_cache: Annotated[Optional[RedisCacheService], Depends(get_redis_cache_service)],
 ) -> ProcessWebhookUseCase:
     """Get ProcessWebhookUseCase instance with all dependencies."""
     return ProcessWebhookUseCase(
         session=session,
-        get_media_owner_uc=get_media_owner_uc,
         forward_webhook_uc=forward_webhook_uc,
         redis_cache=redis_cache,
     )

@@ -1,4 +1,4 @@
-"""Redis cache service for fast media-to-owner lookups."""
+"""Redis cache service for caching worker app lookups."""
 
 import json
 import logging
@@ -12,11 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class RedisCacheService:
-    """
-    Redis cache service for storing media_id -> owner_id mappings.
-
-    Provides fast lookups to avoid repeated database queries and Instagram API calls.
-    """
+    """Redis cache service for storing webhook-related data."""
 
     def __init__(
         self,
@@ -73,96 +69,6 @@ class RedisCacheService:
         if self._client is None:
             await self.connect()
         return self._client
-
-    # Media owner caching methods
-    async def get_media_owner(self, media_id: str) -> Optional[str]:
-        """
-        Get owner_id for a media_id from cache.
-
-        Args:
-            media_id: Instagram media ID
-
-        Returns:
-            owner_id if found in cache, None otherwise
-        """
-        try:
-            client = await self.get_client()
-            if client is None:
-                return None
-
-            key = self._media_key(media_id)
-            owner_id = await client.get(key)
-
-            if owner_id:
-                logger.debug(f"Cache HIT: media_id={media_id} -> owner_id={owner_id}")
-                return owner_id
-            else:
-                logger.debug(f"Cache MISS: media_id={media_id}")
-                return None
-
-        except RedisError as e:
-            logger.warning(f"Redis error getting media owner: {e}")
-            return None
-
-    async def set_media_owner(
-        self,
-        media_id: str,
-        owner_id: str,
-        ttl: Optional[int] = None
-    ) -> bool:
-        """
-        Cache media_id -> owner_id mapping.
-
-        Args:
-            media_id: Instagram media ID
-            owner_id: Instagram account ID
-            ttl: Time to live in seconds (uses default_ttl if None)
-
-        Returns:
-            True if successfully cached, False otherwise
-        """
-        try:
-            client = await self.get_client()
-            if client is None:
-                return False
-
-            key = self._media_key(media_id)
-            ttl = ttl or self.default_ttl
-
-            await client.set(key, owner_id, ex=ttl)
-            logger.debug(f"Cached: media_id={media_id} -> owner_id={owner_id} (TTL={ttl}s)")
-            return True
-
-        except RedisError as e:
-            logger.warning(f"Redis error setting media owner: {e}")
-            return False
-
-    async def delete_media_owner(self, media_id: str) -> bool:
-        """
-        Delete media owner cache entry.
-
-        Args:
-            media_id: Instagram media ID
-
-        Returns:
-            True if deleted, False otherwise
-        """
-        try:
-            client = await self.get_client()
-            if client is None:
-                return False
-
-            key = self._media_key(media_id)
-            result = await client.delete(key)
-
-            if result > 0:
-                logger.debug(f"Deleted cache: media_id={media_id}")
-                return True
-            return False
-
-        except RedisError as e:
-            logger.warning(f"Redis error deleting media owner: {e}")
-            return False
 
     # Worker app caching methods
     async def get_worker_app(self, owner_id: str) -> Optional[dict]:
@@ -307,11 +213,6 @@ class RedisCacheService:
             return False
 
     # Key generation helpers
-    @staticmethod
-    def _media_key(media_id: str) -> str:
-        """Generate Redis key for media owner mapping."""
-        return f"media:{media_id}:owner"
-
     @staticmethod
     def _worker_app_key(owner_id: str) -> str:
         """Generate Redis key for worker app configuration."""

@@ -1,16 +1,12 @@
 """Repository for InstagramComment model."""
 
-import logging
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.core.models.instagram_comment import InstagramComment
 from src.core.repositories.base import BaseRepository
-
-logger = logging.getLogger(__name__)
 
 
 class InstagramCommentRepository(BaseRepository[InstagramComment]):
@@ -33,49 +29,6 @@ class InstagramCommentRepository(BaseRepository[InstagramComment]):
             select(InstagramComment).where(InstagramComment.comment_id == comment_id)
         )
         return result.scalar_one_or_none()
-
-    async def get_with_media(self, comment_id: str) -> Optional[InstagramComment]:
-        """
-        Get comment with media relationship eagerly loaded.
-
-        Args:
-            comment_id: Instagram comment ID
-
-        Returns:
-            InstagramComment with media loaded if found, None otherwise
-        """
-        result = await self.session.execute(
-            select(InstagramComment)
-            .options(selectinload(InstagramComment.media))
-            .where(InstagramComment.comment_id == comment_id)
-        )
-        return result.scalar_one_or_none()
-
-    async def get_by_media_id(
-        self,
-        media_id: str,
-        limit: int = 100,
-        offset: int = 0
-    ) -> list[InstagramComment]:
-        """
-        Get all comments for a media item.
-
-        Args:
-            media_id: Instagram media ID
-            limit: Maximum number of results
-            offset: Number of results to skip
-
-        Returns:
-            List of InstagramComment instances
-        """
-        result = await self.session.execute(
-            select(InstagramComment)
-            .where(InstagramComment.media_id == media_id)
-            .order_by(InstagramComment.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )
-        return list(result.scalars().all())
 
     async def get_by_user_id(
         self,

@@ -1,4 +1,4 @@
-"""Add instagram_media and instagram_comments tables.
+"""Add instagram_comments table.
 
 Revision ID: 3ac0466ac234
 Revises: 0001
@@ -16,27 +16,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    """Create instagram_media and instagram_comments tables."""
-    # Create instagram_media table
-    op.create_table(
-        "instagram_media",
-        sa.Column("media_id", sa.String(length=100), nullable=False, comment="Instagram media ID"),
-        sa.Column("owner_id", sa.String(length=255), nullable=False, comment="Instagram account ID of media owner"),
-        sa.Column("owner_username", sa.String(length=100), nullable=True, comment="Instagram username of media owner"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.PrimaryKeyConstraint("media_id"),
-    )
-
-    # Create indexes for instagram_media
-    op.create_index("ix_instagram_media_media_id", "instagram_media", ["media_id"], unique=False)
-    op.create_index("ix_instagram_media_owner_id", "instagram_media", ["owner_id"], unique=False)
-
+    """Create instagram_comments table."""
     # Create instagram_comments table
     op.create_table(
         "instagram_comments",
         sa.Column("comment_id", sa.String(length=100), nullable=False, comment="Instagram comment ID"),
-        sa.Column("media_id", sa.String(length=100), nullable=False, comment="Instagram media ID"),
+        sa.Column("media_id", sa.String(length=100), nullable=True, comment="Instagram media ID"),
+        sa.Column("owner_id", sa.String(length=255), nullable=False, comment="Instagram business account ID"),
         sa.Column("user_id", sa.String(length=255), nullable=False, comment="Comment author's Instagram user ID"),
         sa.Column("username", sa.String(length=100), nullable=False, comment="Comment author's Instagram username"),
         sa.Column("text", sa.Text(), nullable=False, comment="Comment text content"),
@@ -44,27 +30,22 @@ def upgrade() -> None:
         sa.Column("timestamp", sa.Integer(), nullable=False, comment="Unix timestamp from webhook entry"),
         sa.Column("raw_webhook_data", sa.JSON(), nullable=False, comment="Raw webhook payload for audit"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.ForeignKeyConstraint(["media_id"], ["instagram_media.media_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("comment_id"),
     )
 
     # Create indexes for instagram_comments
     op.create_index("ix_instagram_comments_comment_id", "instagram_comments", ["comment_id"], unique=False)
     op.create_index("ix_instagram_comments_media_id", "instagram_comments", ["media_id"], unique=False)
+    op.create_index("ix_instagram_comments_owner_id", "instagram_comments", ["owner_id"], unique=False)
     op.create_index("ix_instagram_comments_user_id", "instagram_comments", ["user_id"], unique=False)
     op.create_index("ix_instagram_comments_parent_id", "instagram_comments", ["parent_id"], unique=False)
 
 
 def downgrade() -> None:
-    """Drop instagram_comments and instagram_media tables."""
-    # Drop instagram_comments table (must be first due to FK constraint)
+    """Drop instagram_comments table."""
     op.drop_index("ix_instagram_comments_parent_id", table_name="instagram_comments")
     op.drop_index("ix_instagram_comments_user_id", table_name="instagram_comments")
+    op.drop_index("ix_instagram_comments_owner_id", table_name="instagram_comments")
     op.drop_index("ix_instagram_comments_media_id", table_name="instagram_comments")
     op.drop_index("ix_instagram_comments_comment_id", table_name="instagram_comments")
     op.drop_table("instagram_comments")
-
-    # Drop instagram_media table
-    op.drop_index("ix_instagram_media_owner_id", table_name="instagram_media")
-    op.drop_index("ix_instagram_media_media_id", table_name="instagram_media")
-    op.drop_table("instagram_media")

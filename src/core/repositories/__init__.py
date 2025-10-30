@@ -2,14 +2,12 @@
 
 from src.core.repositories.base import BaseRepository
 from src.core.repositories.instagram_comment_repository import InstagramCommentRepository
-from src.core.repositories.instagram_media_repository import InstagramMediaRepository
 from src.core.repositories.webhook_log_repository import WebhookLogRepository
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 
 __all__ = [
     "BaseRepository",
     "WorkerAppRepository",
-    "InstagramMediaRepository",
     "InstagramCommentRepository",
     "WebhookLogRepository",
 ]
