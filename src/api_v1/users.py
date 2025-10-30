@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Security, status
 
 from src.api_v1.schemas import UserCreate, UserResponse
 from src.core.dependencies import get_current_active_user, get_user_repository
@@ -37,5 +38,19 @@ async def create_user(user_in: UserCreate, repo: UserRepository = Depends(get_us
 
 
 @router.get("/me", response_model=UserResponse)
-async def read_users_me(current_user: User = Depends(get_current_active_user)) -> User:
+async def read_users_me(
+    current_user: Annotated[User, Security(get_current_active_user, scopes=["me"])]
+) -> User:
     return current_user
+
+
+@router.get("/me/items", tags=["users"])
+async def read_users_me_items(
+    current_user: Annotated[User, Security(get_current_active_user, scopes=["items"])]
+) -> list[dict[str, str]]:
+    return [
+        {
+            "item_id": "own-item",
+            "owner": current_user.email,
+        }
+    ]

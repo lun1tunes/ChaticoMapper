@@ -5,29 +5,35 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+import jwt
+from jwt import InvalidTokenError
+from pwdlib import PasswordHash
 
 from src.core.config import get_settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+password_hash = PasswordHash.recommended()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return password_hash.verify(plain_password, hashed_password)
+    except ValueError:
+        # Raised when the stored hash is invalid/corrupted
+        return False
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return password_hash.hash(password)
 
 
 def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     settings = get_settings()
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.jwt.expire_minutes))
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(minutes=settings.jwt.expire_minutes)
+    )
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.security.secret_key, algorithm=settings.jwt.algorithm)
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.security.secret_key, algorithm=settings.jwt.algorithm)
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
@@ -42,5 +48,5 @@ class TokenDecodeError(Exception):
 def safe_decode_token(token: str) -> dict[str, Any]:
     try:
         return decode_access_token(token)
-    except JWTError as exc:  # pragma: no cover – jose provides limited exception granularity
+    except InvalidTokenError as exc:  # pragma: no cover - exception granularity provided by PyJWT
         raise TokenDecodeError(str(exc)) from exc

@@ -225,7 +225,8 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
-    sub: Optional[str] = None
+    username: Optional[str] = None
+    scopes: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="ignore")
 

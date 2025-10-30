@@ -8,7 +8,7 @@ and the application's DI container.
 from typing import Annotated, AsyncGenerator, Optional
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, SecurityScopes
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings, get_settings
@@ -21,7 +21,6 @@ from src.core.repositories.instagram_comment_repository import InstagramCommentR
 from src.core.repositories.webhook_log_repository import WebhookLogRepository
 from src.core.services.redis_cache_service import RedisCacheService
 from src.core.services.instagram_api_service import InstagramAPIService
-from src.core.services.auth_service import authenticate_user
 from src.core.services.security import TokenDecodeError, safe_decode_token
 from src.core.use_cases.get_media_owner_use_case import GetMediaOwnerUseCase
 from src.core.use_cases.forward_webhook_use_case import ForwardWebhookUseCase
@@ -184,44 +183,54 @@ def get_process_webhook_use_case(
 # Authentication Dependencies
 # ============================================================================
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/token",
+    scopes={
+        "me": "Read information about the current user.",
+        "items": "Read items that belong to the current user.",
+    },
+)
 
 
 async def get_current_user(
-    token: Annotated[Optional[str], Depends(oauth2_scheme)],
+    security_scopes: SecurityScopes,
+    token: Annotated[str, Depends(oauth2_scheme)],
     repo: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> User:
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    if security_scopes.scopes:
+        authenticate_value = f'Bearer scope="{security_scopes.scope_str}"'
+    else:
+        authenticate_value = "Bearer"
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": authenticate_value},
+    )
 
     try:
         payload = safe_decode_token(token)
     except TokenDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise credentials_exception
 
-    token_data = TokenData.model_validate(payload)
-    if not token_data.sub:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    token_data = TokenData(
+        username=payload.get("sub"),
+        scopes=payload.get("scopes", []),
+    )
+    if not token_data.username:
+        raise credentials_exception
 
-    user = await repo.get_by_email(token_data.sub)
+    for scope in security_scopes.scopes:
+        if scope not in token_data.scopes:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough permissions",
+                headers={"WWW-Authenticate": authenticate_value},
+            )
+
+    user = await repo.get_by_email(token_data.username)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise credentials_exception
 
     return user
 
