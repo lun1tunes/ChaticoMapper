@@ -222,11 +222,11 @@ class ErrorResponse(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    base_url: Optional[str] = None
 
 
 class TokenData(BaseModel):
     username: Optional[str] = None
-    scopes: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="ignore")
 

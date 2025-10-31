@@ -8,7 +8,7 @@ and the application's DI container.
 from typing import Annotated, AsyncGenerator, Optional
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, SecurityScopes
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings, get_settings
@@ -133,29 +133,17 @@ def get_process_webhook_use_case(
 # Authentication Dependencies
 # ============================================================================
 
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/api/v1/auth/token",
-    scopes={
-        "me": "Read information about the current user.",
-        "items": "Read items that belong to the current user.",
-    },
-)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
 async def get_current_user(
-    security_scopes: SecurityScopes,
     token: Annotated[str, Depends(oauth2_scheme)],
     repo: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> User:
-    if security_scopes.scopes:
-        authenticate_value = f'Bearer scope="{security_scopes.scope_str}"'
-    else:
-        authenticate_value = "Bearer"
-
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
-        headers={"WWW-Authenticate": authenticate_value},
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
     try:
@@ -163,20 +151,9 @@ async def get_current_user(
     except TokenDecodeError:
         raise credentials_exception
 
-    token_data = TokenData(
-        username=payload.get("sub"),
-        scopes=payload.get("scopes", []),
-    )
+    token_data = TokenData(username=payload.get("sub"))
     if not token_data.username:
         raise credentials_exception
-
-    for scope in security_scopes.scopes:
-        if scope not in token_data.scopes:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not enough permissions",
-                headers={"WWW-Authenticate": authenticate_value},
-            )
 
     user = await repo.get_by_email(token_data.username)
     if not user:

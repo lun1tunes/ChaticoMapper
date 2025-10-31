@@ -22,7 +22,7 @@ class ProcessWebhookUseCase:
 
     Workflow:
     1. Extract comment data from webhook payload
-    2. Resolve owner_id directly from webhook entry
+    2. Resolve account_id directly from webhook entry
     3. Find active worker app for owner
     4. Store comment in database
     5. Forward webhook to worker app
@@ -116,7 +116,7 @@ class ProcessWebhookUseCase:
         """
         comment_id = comment_data.get("comment_id")
         media_id = comment_data.get("media_id")
-        account_id = comment_data.get("owner_id")
+        account_id = comment_data.get("account_id")
 
         # Check if comment already processed
         if await self.comment_repo.exists_by_comment_id(comment_id):
@@ -128,7 +128,7 @@ class ProcessWebhookUseCase:
             }
 
         if not account_id:
-            error = f"Missing owner_id in webhook entry for comment_id={comment_id}"
+            error = f"Missing account_id in webhook entry for comment_id={comment_id}"
             logger.error(error)
             return {
                 "success": False,
@@ -233,7 +233,7 @@ class ProcessWebhookUseCase:
         comment = InstagramComment(
             comment_id=comment_data["comment_id"],
             media_id=comment_data["media_id"],
-            owner_id=comment_data["owner_id"],
+            owner_id=comment_data["account_id"],
             user_id=comment_data["user_id"],
             username=comment_data["username"],
             text=comment_data["text"],
@@ -258,7 +258,7 @@ class ProcessWebhookUseCase:
         comments = []
 
         for entry in webhook_payload.get("entry", []):
-            owner_id = entry.get("id")
+            account_id = entry.get("id")
             entry_timestamp = entry.get("time", 0)
 
             for change in entry.get("changes", []):
@@ -276,14 +276,14 @@ class ProcessWebhookUseCase:
                 text = value.get("text", "")
                 parent_id = value.get("parent_id")
 
-                if not all([comment_id, owner_id, user_id, username]):
+                if not all([comment_id, account_id, user_id, username]):
                     logger.warning(f"Incomplete comment data, skipping: {value}")
                     continue
 
                 comments.append({
                     "comment_id": comment_id,
                     "media_id": media_id,
-                    "owner_id": owner_id,
+                    "account_id": account_id,
                     "user_id": user_id,
                     "username": username,
                     "text": text,
