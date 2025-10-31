@@ -15,30 +15,30 @@ class WorkerAppRepository(BaseRepository[WorkerApp]):
     def __init__(self, session: AsyncSession):
         super().__init__(WorkerApp, session)
 
-    async def get_by_owner_id(self, owner_id: str) -> Optional[WorkerApp]:
+    async def get_by_account_id(self, account_id: str) -> Optional[WorkerApp]:
         """
-        Get worker app by Instagram owner ID.
+        Get worker app by Instagram account ID.
 
         Args:
-            owner_id: Instagram account ID
+            account_id: Instagram account ID
 
         Returns:
             WorkerApp if found, None otherwise
         """
         result = await self.session.execute(
-            select(WorkerApp).where(WorkerApp.owner_id == owner_id)
+            select(WorkerApp).where(WorkerApp.account_id == account_id)
         )
         return result.scalar_one_or_none()
 
-    async def exists_by_owner_id(self, owner_id: str) -> bool:
+    async def exists_by_account_id(self, account_id: str) -> bool:
         """
-        Check if worker app exists for owner ID.
+        Check if worker app exists for account ID.
 
         Args:
-            owner_id: Instagram account ID
+            account_id: Instagram account ID
 
         Returns:
             True if exists, False otherwise
         """
-        worker_app = await self.get_by_owner_id(owner_id)
+        worker_app = await self.get_by_account_id(account_id)
         return worker_app is not None

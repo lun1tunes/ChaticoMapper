@@ -71,12 +71,12 @@ class RedisCacheService:
         return self._client
 
     # Worker app caching methods
-    async def get_worker_app(self, owner_id: str) -> Optional[dict]:
+    async def get_worker_app(self, account_id: str) -> Optional[dict]:
         """
-        Get worker app configuration for an owner_id from cache.
+        Get worker app configuration for an account_id from cache.
 
         Args:
-            owner_id: Instagram account ID
+            account_id: Instagram account ID
 
         Returns:
             Worker app data dict if found, None otherwise
@@ -86,14 +86,14 @@ class RedisCacheService:
             if client is None:
                 return None
 
-            key = self._worker_app_key(owner_id)
+            key = self._worker_app_key(account_id)
             data = await client.get(key)
 
             if data:
-                logger.debug(f"Cache HIT: worker_app for owner_id={owner_id}")
+                logger.debug(f"Cache HIT: worker_app for account_id={account_id}")
                 return json.loads(data)
             else:
-                logger.debug(f"Cache MISS: worker_app for owner_id={owner_id}")
+                logger.debug(f"Cache MISS: worker_app for account_id={account_id}")
                 return None
 
         except (RedisError, json.JSONDecodeError, TypeError) as e:
@@ -102,7 +102,7 @@ class RedisCacheService:
 
     async def set_worker_app(
         self,
-        owner_id: str,
+        account_id: str,
         worker_app_data: dict,
         ttl: Optional[int] = None
     ) -> bool:
@@ -110,7 +110,7 @@ class RedisCacheService:
         Cache worker app configuration.
 
         Args:
-            owner_id: Instagram account ID
+            account_id: Instagram account ID
             worker_app_data: Worker app configuration dict
             ttl: Time to live in seconds (uses default_ttl if None)
 
@@ -122,23 +122,23 @@ class RedisCacheService:
             if client is None:
                 return False
 
-            key = self._worker_app_key(owner_id)
+            key = self._worker_app_key(account_id)
             ttl = ttl or self.default_ttl
 
             await client.set(key, json.dumps(worker_app_data), ex=ttl)
-            logger.debug(f"Cached worker_app for owner_id={owner_id} (TTL={ttl}s)")
+            logger.debug(f"Cached worker_app for account_id={account_id} (TTL={ttl}s)")
             return True
 
         except (RedisError, TypeError, ValueError) as e:
             logger.warning(f"Redis error setting worker app: {e}")
             return False
 
-    async def delete_worker_app(self, owner_id: str) -> bool:
+    async def delete_worker_app(self, account_id: str) -> bool:
         """
         Delete worker app cache entry.
 
         Args:
-            owner_id: Instagram account ID
+            account_id: Instagram account ID
 
         Returns:
             True if deleted, False otherwise
@@ -148,11 +148,11 @@ class RedisCacheService:
             if client is None:
                 return False
 
-            key = self._worker_app_key(owner_id)
+            key = self._worker_app_key(account_id)
             result = await client.delete(key)
 
             if result > 0:
-                logger.debug(f"Deleted cache: worker_app for owner_id={owner_id}")
+                logger.debug(f"Deleted cache: worker_app for account_id={account_id}")
                 return True
             return False
 
@@ -214,6 +214,6 @@ class RedisCacheService:
 
     # Key generation helpers
     @staticmethod
-    def _worker_app_key(owner_id: str) -> str:
+    def _worker_app_key(account_id: str) -> str:
         """Generate Redis key for worker app configuration."""
-        return f"worker_app:{owner_id}"
+        return f"worker_app:{account_id}"

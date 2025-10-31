@@ -146,7 +146,7 @@ class RoutingResponse(BaseModel):
 class WorkerAppCreate(BaseModel):
     """Worker app creation schema."""
 
-    owner_id: str = Field(
+    account_id: str = Field(
         ..., description="Instagram account ID", min_length=1, max_length=255
     )
     owner_instagram_username: str = Field(
@@ -168,7 +168,7 @@ class WorkerAppResponse(BaseModel):
     """Worker app response schema."""
 
     id: UUID = Field(..., description="Worker app ID")
-    owner_id: str = Field(..., description="Instagram account ID")
+    account_id: str = Field(..., description="Instagram account ID")
     owner_instagram_username: str = Field(
         ..., description="Instagram username of the owner"
     )

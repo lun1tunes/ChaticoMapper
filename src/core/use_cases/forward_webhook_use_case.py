@@ -32,7 +32,7 @@ class ForwardWebhookUseCase:
         self,
         worker_app: WorkerApp,
         webhook_payload: dict,
-        owner_id: str,
+        account_id: str,
     ) -> dict:
         """
         Forward webhook to worker app and log result.
@@ -40,7 +40,7 @@ class ForwardWebhookUseCase:
         Args:
             worker_app: WorkerApp configuration
             webhook_payload: Original Instagram webhook payload
-            owner_id: Instagram account ID
+            account_id: Instagram account ID
 
         Returns:
             dict with:
@@ -68,7 +68,7 @@ class ForwardWebhookUseCase:
             # Log the forwarding attempt
             await self._create_log_entry(
                 webhook_id=webhook_id,
-                owner_id=owner_id,
+                account_id=account_id,
                 worker_app=worker_app,
                 result=result,
                 processing_time_ms=processing_time_ms,
@@ -83,7 +83,7 @@ class ForwardWebhookUseCase:
             # Log the failure
             await self._create_log_entry(
                 webhook_id=webhook_id,
-                owner_id=owner_id,
+                account_id=account_id,
                 worker_app=worker_app,
                 result={"success": False, "error": str(e)},
                 processing_time_ms=processing_time_ms,
@@ -183,7 +183,7 @@ class ForwardWebhookUseCase:
     async def _create_log_entry(
         self,
         webhook_id: str,
-        owner_id: str,
+        account_id: str,
         worker_app: WorkerApp,
         result: dict,
         processing_time_ms: int,
@@ -193,7 +193,7 @@ class ForwardWebhookUseCase:
 
         Args:
             webhook_id: Unique webhook identifier
-            owner_id: Instagram account ID
+            account_id: Instagram account ID
             worker_app: WorkerApp configuration
             result: Forwarding result dict
             processing_time_ms: Processing time in milliseconds
@@ -201,7 +201,7 @@ class ForwardWebhookUseCase:
         try:
             log_entry = WebhookLog(
                 webhook_id=webhook_id,
-                owner_id=owner_id,
+                account_id=account_id,
                 worker_app_id=worker_app.id,
                 target_owner_username=worker_app.owner_instagram_username,
                 target_base_url=worker_app.base_url,

@@ -20,7 +20,6 @@ router = APIRouter(prefix="/webhook", tags=["webhook"])
 
 
 @router.get("", response_class=PlainTextResponse)
-@router.get("/", response_class=PlainTextResponse)
 async def verify_webhook(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
@@ -49,15 +48,18 @@ async def verify_webhook(
         )
 
     logger.info("Webhook verification successful")
-    return PlainTextResponse(content=verification.hub_challenge, status_code=status.HTTP_200_OK)
+    return PlainTextResponse(
+        content=verification.hub_challenge, status_code=status.HTTP_200_OK
+    )
 
 
 @router.post("", response_model=RoutingResponse)
-@router.post("/", response_model=RoutingResponse)
 async def process_webhook(
     webhook_payload: WebhookPayload,
     request: Request,
-    process_webhook_uc: Annotated[ProcessWebhookUseCase, Depends(get_process_webhook_use_case)],
+    process_webhook_uc: Annotated[
+        ProcessWebhookUseCase, Depends(get_process_webhook_use_case)
+    ],
 ) -> RoutingResponse:
     """Process Instagram comment webhook notifications."""
     trace_id = request.headers.get("X-Trace-ID", "unknown")
@@ -104,9 +106,3 @@ async def process_webhook(
         error_details=error_msg,
         webhook_id=trace_id,
     )
-
-
-@router.get("/health")
-async def webhook_health() -> dict[str, str]:
-    """Quick health check for webhook endpoint."""
-    return {"status": "ok", "endpoint": "webhook"}

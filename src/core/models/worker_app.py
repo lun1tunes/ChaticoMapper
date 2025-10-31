@@ -19,7 +19,7 @@ class WorkerApp(Base):
     __tablename__ = "worker_apps"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    owner_id: Mapped[str] = mapped_column(
+    account_id: Mapped[str] = mapped_column(
         String(255),
         unique=True,
         index=True,
@@ -57,6 +57,6 @@ class WorkerApp(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<WorkerApp(id={self.id}, owner_id={self.owner_id}, "
+            f"<WorkerApp(id={self.id}, account_id={self.account_id}, "
             f"base_url={self.base_url})>"
         )

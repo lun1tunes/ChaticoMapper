@@ -39,19 +39,19 @@ async def create_worker_app(
         Created worker app
 
     Raises:
-        409: If worker app with owner_id already exists
+        409: If worker app with account_id already exists
     """
 
     # Check if worker app already exists for this owner
-    if await repo.exists_by_owner_id(worker_app_data.owner_id):
+    if await repo.exists_by_account_id(worker_app_data.account_id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Worker app already exists for owner_id: {worker_app_data.owner_id}"
+            detail=f"Worker app already exists for account_id: {worker_app_data.account_id}"
         )
 
     # Create worker app
     worker_app = WorkerApp(
-        owner_id=worker_app_data.owner_id,
+        account_id=worker_app_data.account_id,
         owner_instagram_username=worker_app_data.owner_instagram_username,
         base_url=str(worker_app_data.base_url),
     )
@@ -61,9 +61,9 @@ async def create_worker_app(
     await session.refresh(worker_app)
 
     logger.info(
-        "Created worker app id=%s owner_id=%s username=%s",
+        "Created worker app id=%s account_id=%s username=%s",
         worker_app.id,
-        worker_app.owner_id,
+        worker_app.account_id,
         worker_app.owner_instagram_username,
     )
 
@@ -210,30 +210,30 @@ async def delete_worker_app(
     return None
 
 
-@router.get("/owner/{owner_id}", response_model=WorkerAppResponse)
-async def get_worker_app_by_owner(
-    owner_id: str,
+@router.get("/account/{account_id}", response_model=WorkerAppResponse)
+async def get_worker_app_by_account(
+    account_id: str,
     repo: Annotated[WorkerAppRepository, Depends(get_worker_app_repository)],
 ):
     """
-    Get worker app by Instagram owner ID.
+    Get worker app by Instagram account ID.
 
     Args:
-        owner_id: Instagram account ID
+        account_id: Instagram account ID
 
     Returns:
         Worker app for the owner
 
     Raises:
-        404: If no worker app found for owner
+        404: If no worker app found for account
     """
 
-    worker_app = await repo.get_by_owner_id(owner_id)
+    worker_app = await repo.get_by_account_id(account_id)
 
     if not worker_app:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No worker app found for owner_id: {owner_id}"
+            detail=f"No worker app found for account_id: {account_id}"
         )
 
     return worker_app

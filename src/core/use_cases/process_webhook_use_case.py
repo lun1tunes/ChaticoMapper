@@ -116,7 +116,7 @@ class ProcessWebhookUseCase:
         """
         comment_id = comment_data.get("comment_id")
         media_id = comment_data.get("media_id")
-        owner_id = comment_data.get("owner_id")
+        account_id = comment_data.get("owner_id")
 
         # Check if comment already processed
         if await self.comment_repo.exists_by_comment_id(comment_id):
@@ -127,7 +127,7 @@ class ProcessWebhookUseCase:
                 "comment_id": comment_id,
             }
 
-        if not owner_id:
+        if not account_id:
             error = f"Missing owner_id in webhook entry for comment_id={comment_id}"
             logger.error(error)
             return {
@@ -137,10 +137,10 @@ class ProcessWebhookUseCase:
             }
 
         # Get worker app (with caching)
-        worker_app = await self._get_worker_app_cached(owner_id)
+        worker_app = await self._get_worker_app_cached(account_id)
 
         if not worker_app:
-            error = f"No worker app found for owner_id={owner_id}"
+            error = f"No worker app found for account_id={account_id}"
             logger.warning(error)
             return {
                 "success": False,
@@ -162,20 +162,20 @@ class ProcessWebhookUseCase:
         forward_result = await self.forward_webhook_uc.execute(
             worker_app=worker_app,
             webhook_payload=webhook_payload,
-            owner_id=owner_id,
+            account_id=account_id,
         )
 
         if forward_result.get("success"):
             logger.info(
-                "Successfully processed comment_id=%s for owner_id=%s (username=%s)",
+                "Successfully processed comment_id=%s for account_id=%s (username=%s)",
                 comment_id,
-                owner_id,
+                account_id,
                 worker_app.owner_instagram_username,
             )
             return {
                 "success": True,
                 "comment_id": comment_id,
-                "owner_id": owner_id,
+                "account_id": account_id,
                 "worker_app_username": worker_app.owner_instagram_username,
                 "worker_app_base_url": worker_app.base_url,
                 "processing_time_ms": forward_result.get("processing_time_ms"),
@@ -183,9 +183,9 @@ class ProcessWebhookUseCase:
         else:
             error_detail = forward_result.get("error")
             logger.error(
-                "Failed to forward webhook to %s (owner_id=%s): %s",
+                "Failed to forward webhook to %s (account_id=%s): %s",
                 worker_app.owner_instagram_username,
-                owner_id,
+                account_id,
                 error_detail,
             )
             return {
@@ -194,14 +194,14 @@ class ProcessWebhookUseCase:
                 "comment_id": comment_id,
             }
 
-    async def _get_worker_app_cached(self, owner_id: str) -> Optional[WorkerApp]:
+    async def _get_worker_app_cached(self, account_id: str) -> Optional[WorkerApp]:
         """Retrieve worker app configuration with optional Redis caching."""
         cached_id: Optional[str] = None
 
         if self.redis_cache:
-            cached_data = await self.redis_cache.get_worker_app(owner_id)
+            cached_data = await self.redis_cache.get_worker_app(account_id)
             if cached_data:
-                logger.debug("Worker app cache HIT for owner_id=%s", owner_id)
+                logger.debug("Worker app cache HIT for account_id=%s", account_id)
                 cached_id = cached_data.get("id")
                 if cached_id:
                     try:
@@ -210,21 +210,21 @@ class ProcessWebhookUseCase:
                             return worker_app
                     except (ValueError, TypeError):
                         logger.warning(
-                            "Invalid worker app id in cache for owner_id=%s",
-                            owner_id,
+                            "Invalid worker app id in cache for account_id=%s",
+                            account_id,
                         )
 
         # Cache miss or invalid entry -> fetch from DB
-        worker_app = await self.worker_app_repo.get_by_owner_id(owner_id)
+        worker_app = await self.worker_app_repo.get_by_account_id(account_id)
 
         if worker_app and self.redis_cache:
             cache_payload = {
                 "id": str(worker_app.id),
-                "owner_id": worker_app.owner_id,
+                "account_id": worker_app.account_id,
                 "owner_instagram_username": worker_app.owner_instagram_username,
                 "base_url": worker_app.base_url,
             }
-            await self.redis_cache.set_worker_app(owner_id, cache_payload)
+            await self.redis_cache.set_worker_app(account_id, cache_payload)
 
         return worker_app
 

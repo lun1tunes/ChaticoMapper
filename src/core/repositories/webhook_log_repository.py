@@ -34,17 +34,17 @@ class WebhookLogRepository(BaseRepository[WebhookLog]):
         )
         return result.scalar_one_or_none()
 
-    async def get_by_owner_id(
+    async def get_by_account_id(
         self,
-        owner_id: str,
+        account_id: str,
         limit: int = 100,
         offset: int = 0
     ) -> list[WebhookLog]:
         """
-        Get all logs for an owner.
+        Get all logs for an account.
 
         Args:
-            owner_id: Instagram account ID
+            account_id: Instagram account ID
             limit: Maximum number of results
             offset: Number of results to skip
 
@@ -53,7 +53,7 @@ class WebhookLogRepository(BaseRepository[WebhookLog]):
         """
         result = await self.session.execute(
             select(WebhookLog)
-            .where(WebhookLog.owner_id == owner_id)
+            .where(WebhookLog.account_id == account_id)
             .order_by(WebhookLog.created_at.desc())
             .limit(limit)
             .offset(offset)
@@ -129,19 +129,19 @@ class WebhookLogRepository(BaseRepository[WebhookLog]):
         )
         return result.scalar_one()
 
-    async def count_by_owner_id(self, owner_id: str) -> int:
+    async def count_by_account_id(self, account_id: str) -> int:
         """
-        Count logs for an owner.
+        Count logs for an account.
 
         Args:
-            owner_id: Instagram account ID
+            account_id: Instagram account ID
 
         Returns:
             Count of logs
         """
         result = await self.session.execute(
             select(func.count()).select_from(WebhookLog).where(
-                WebhookLog.owner_id == owner_id
+                WebhookLog.account_id == account_id
             )
         )
         return result.scalar_one()

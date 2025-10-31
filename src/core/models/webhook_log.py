@@ -22,7 +22,7 @@ class WebhookLog(Base):
     webhook_id: Mapped[str] = mapped_column(
         String(255), unique=True, index=True, nullable=False, comment="Unique webhook ID"
     )
-    owner_id: Mapped[str] = mapped_column(
+    account_id: Mapped[str] = mapped_column(
         String(255), nullable=False, index=True, comment="Instagram account ID"
     )
     worker_app_id: Mapped[UUID | None] = mapped_column(
