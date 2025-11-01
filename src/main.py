@@ -17,12 +17,11 @@ from src.api_v1.users import router as users_router
 from src.api_v1.webhook import router as webhook_router
 from src.api_v1.worker_apps import router as worker_apps_router
 from src.core.config import get_settings
-from src.core.logging_config import setup_logging
+from src.core.logging_config import configure_logging, trace_id_ctx
 from src.core.models.db_helper import db_helper
 
 # Configure logging based on environment settings early during startup
 settings = get_settings()
-setup_logging(settings.log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -34,8 +33,9 @@ async def lifespan(app: FastAPI):
     Handles startup and shutdown events for the application.
     """
     # Startup
-    logger.info("Starting Chatico Mapper App...")
     settings = get_settings()
+    configure_logging()
+    logger.info("Starting Chatico Mapper App...")
 
     # Initialize database
     try:
@@ -170,75 +170,81 @@ async def verify_webhook_signature(request: Request, call_next):
     # Assign/propagate a trace id for each request
     incoming_trace = request.headers.get("X-Trace-Id")
     trace_id = incoming_trace or str(uuid.uuid4())
-    # Check if this is a POST request to the webhook endpoint (with or without trailing slash)
-    webhook_path = "/api/v1/webhook"
-    if request.method == "POST" and request.url.path.rstrip("/") == webhook_path:
-        # Instagram uses X-Hub-Signature-256 (SHA256) instead of X-Hub-Signature (SHA1)
-        signature_256 = request.headers.get("X-Hub-Signature-256")
-        signature_1 = request.headers.get("X-Hub-Signature")
-        body = await request.body()
+    token = trace_id_ctx.set(trace_id)
+    try:
+        # Check if this is a POST request to the webhook endpoint (with or without trailing slash)
+        webhook_path = "/api/v1/webhook"
+        if request.method == "POST" and request.url.path.rstrip("/") == webhook_path:
+            # Instagram uses X-Hub-Signature-256 (SHA256) instead of X-Hub-Signature (SHA1)
+            signature_256 = request.headers.get("X-Hub-Signature-256")
+            signature_1 = request.headers.get("X-Hub-Signature")
+            body = await request.body()
 
-        # Try SHA256 first (Instagram's preferred method), then fallback to SHA1
-        signature = signature_256 or signature_1
+            # Try SHA256 first (Instagram's preferred method), then fallback to SHA1
+            signature = signature_256 or signature_1
 
-        if signature:
-            # Determine which algorithm to use based on the header
-            if signature_256:
-                # Instagram uses SHA256
-                expected_signature = (
-                    "sha256="
-                    + hmac.new(
-                        settings.app_secret.encode(), body, hashlib.sha256
-                    ).hexdigest()
-                )
+            if signature:
+                # Determine which algorithm to use based on the header
+                if signature_256:
+                    # Instagram uses SHA256
+                    expected_signature = (
+                        "sha256="
+                        + hmac.new(
+                            settings.app_secret.encode(), body, hashlib.sha256
+                        ).hexdigest()
+                    )
+                else:
+                    # Fallback to SHA1 for compatibility
+                    expected_signature = (
+                        "sha1="
+                        + hmac.new(
+                            settings.app_secret.encode(), body, hashlib.sha1
+                        ).hexdigest()
+                    )
+
+                if not hmac.compare_digest(signature, expected_signature):
+                    logging.error("Signature verification failed!")
+                    logging.error(f"Body length: {len(body)}")
+                    logging.error(
+                        f"Signature header used: {'X-Hub-Signature-256' if signature_256 else 'X-Hub-Signature'}"
+                    )
+                    logging.error(
+                        f"Signature prefix: {signature[:10]}..."
+                        if len(signature) > 10
+                        else "Signature: [REDACTED]"
+                    )
+                    return JSONResponse(
+                        status_code=401, content={"detail": "Invalid signature"}
+                    )
+                else:
+                    logging.info("Signature verification successful")
             else:
-                # Fallback to SHA1 for compatibility
-                expected_signature = (
-                    "sha1="
-                    + hmac.new(
-                        settings.app_secret.encode(), body, hashlib.sha1
-                    ).hexdigest()
-                )
+                # Check if we're in development mode (allow requests without signature for testing)
+                development_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
 
-            if not hmac.compare_digest(signature, expected_signature):
-                logging.error("Signature verification failed!")
-                logging.error(f"Body length: {len(body)}")
-                logging.error(
-                    f"Signature header used: {'X-Hub-Signature-256' if signature_256 else 'X-Hub-Signature'}"
-                )
-                logging.error(
-                    f"Signature prefix: {signature[:10]}..."
-                    if len(signature) > 10
-                    else "Signature: [REDACTED]"
-                )
-                return JSONResponse(
-                    status_code=401, content={"detail": "Invalid signature"}
-                )
-            else:
-                logging.info("Signature verification successful")
+                if development_mode:
+                    logging.warning(
+                        "DEVELOPMENT MODE: Allowing webhook request without signature header"
+                    )
+                else:
+                    # Block requests without signature headers in production
+                    logging.error(
+                        "Webhook request received without X-Hub-Signature or X-Hub-Signature-256 header - blocking request"
+                    )
+                    return JSONResponse(
+                        status_code=401, content={"detail": "Missing signature header"}
+                    )
+
+            # Сохраняем тело запроса для дальнейшей обработки
+            request.state.body = body
+            response = await call_next(request)
         else:
-            # Check if we're in development mode (allow requests without signature for testing)
-            development_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
+            response = await call_next(request)
 
-            if development_mode:
-                logging.warning(
-                    "DEVELOPMENT MODE: Allowing webhook request without signature header"
-                )
-            else:
-                # Block requests without signature headers in production
-                logging.error(
-                    "Webhook request received without X-Hub-Signature or X-Hub-Signature-256 header - blocking request"
-                )
-                return JSONResponse(
-                    status_code=401, content={"detail": "Missing signature header"}
-                )
-
-        # Сохраняем тело запроса для дальнейшей обработки
-        request.state.body = body
-        return await call_next(request)
-    response = await call_next(request)
-    response.headers["X-Trace-Id"] = trace_id
-    return response
+        response.headers["X-Trace-Id"] = trace_id
+        return response
+    finally:
+        trace_id_ctx.reset(token)
 
 
 if __name__ == "__main__":

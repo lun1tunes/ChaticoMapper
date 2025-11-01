@@ -30,33 +30,48 @@ def _int_env(name: str, default: int) -> int:
 
 
 class AppSettings(BaseModel):
-    name: str = Field(default_factory=lambda: os.getenv("APP_NAME", "Chatico Mapper App").strip() or "Chatico Mapper App")
-    version: str = Field(default_factory=lambda: os.getenv("APP_VERSION", "0.1.0").strip() or "0.1.0")
+    name: str = Field(
+        default_factory=lambda: os.getenv("APP_NAME", "Chatico Mapper App").strip()
+        or "Chatico Mapper App"
+    )
+    version: str = Field(
+        default_factory=lambda: os.getenv("APP_VERSION", "0.1.0").strip() or "0.1.0"
+    )
     debug: bool = Field(default_factory=lambda: _bool_env("DEBUG", False))
-    log_level: str = Field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").strip().upper())
+    log_level: str = Field(
+        default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").strip().upper()
+    )
 
     @model_validator(mode="after")
     def _validate(self) -> "AppSettings":
         if self.log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
-            raise ValueError("LOG_LEVEL must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL")
+            raise ValueError(
+                "LOG_LEVEL must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL"
+            )
         return self
 
 
 class ServerSettings(BaseModel):
-    host: str = Field(default_factory=lambda: os.getenv("HOST", "0.0.0.0").strip() or "0.0.0.0")
+    host: str = Field(
+        default_factory=lambda: os.getenv("HOST", "0.0.0.0").strip() or "0.0.0.0"
+    )
     port: int = Field(default_factory=lambda: _int_env("PORT", 8000))
 
 
 class DatabaseSettings(BaseModel):
     url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", "").strip())
     pool_size: int = Field(default_factory=lambda: _int_env("DATABASE_POOL_SIZE", 20))
-    max_overflow: int = Field(default_factory=lambda: _int_env("DATABASE_MAX_OVERFLOW", 30))
+    max_overflow: int = Field(
+        default_factory=lambda: _int_env("DATABASE_MAX_OVERFLOW", 30)
+    )
 
     @model_validator(mode="after")
     def _validate(self) -> "DatabaseSettings":
         if not self.url:
             raise ValueError("DATABASE_URL environment variable must be set.")
-        if not self.url.startswith(("postgresql://", "postgresql+asyncpg://", "sqlite+aiosqlite://")):
+        if not self.url.startswith(
+            ("postgresql://", "postgresql+asyncpg://", "sqlite+aiosqlite://")
+        ):
             raise ValueError(
                 "DATABASE_URL must start with postgresql://, postgresql+asyncpg://, or sqlite+aiosqlite://"
             )
@@ -64,42 +79,31 @@ class DatabaseSettings(BaseModel):
 
 
 class InstagramSettings(BaseModel):
-    app_id: str = Field(default_factory=lambda: os.getenv("INSTAGRAM_APP_ID", "").strip())
-    app_secret: str = Field(default_factory=lambda: os.getenv("INSTAGRAM_APP_SECRET", "").strip())
-    access_token: str = Field(default_factory=lambda: os.getenv("INSTAGRAM_ACCESS_TOKEN", "").strip())
-    api_base_url: str = Field(default_factory=lambda: os.getenv("INSTAGRAM_API_BASE_URL", "https://graph.instagram.com/v23.0").strip())
-    api_timeout: int = Field(default_factory=lambda: _int_env("INSTAGRAM_API_TIMEOUT", 30))
+    app_secret: str = Field(
+        default_factory=lambda: os.getenv("INSTAGRAM_APP_SECRET", "").strip()
+    )
+    api_base_url: str = Field(
+        default_factory=lambda: os.getenv(
+            "INSTAGRAM_API_BASE_URL", "https://graph.instagram.com/v23.0"
+        ).strip()
+    )
+    verify_token: str = Field(
+        default_factory=lambda: os.getenv("WEBHOOK_INIT_VERIFY_TOKEN", "").strip()
+    )
 
     @model_validator(mode="after")
     def _validate(self) -> "InstagramSettings":
-        missing = [k for k, v in {
-            "INSTAGRAM_APP_ID": self.app_id,
-            "INSTAGRAM_APP_SECRET": self.app_secret,
-            "INSTAGRAM_ACCESS_TOKEN": self.access_token,
-        }.items() if not v]
-        if missing:
-            raise ValueError(f"Missing Instagram configuration variables: {', '.join(missing)}")
-        return self
-
-
-class WebhookSettings(BaseModel):
-    secret: str = Field(default_factory=lambda: os.getenv("WEBHOOK_SECRET", "").strip())
-    verify_token: str = Field(default_factory=lambda: os.getenv("WEBHOOK_VERIFY_TOKEN", "").strip())
-    max_size: int = Field(default_factory=lambda: _int_env("WEBHOOK_MAX_SIZE", 1_048_576))
-
-    @model_validator(mode="after")
-    def _validate(self) -> "WebhookSettings":
-        missing = [k for k, v in {
-            "WEBHOOK_SECRET": self.secret,
-            "WEBHOOK_VERIFY_TOKEN": self.verify_token,
-        }.items() if not v]
-        if missing:
-            raise ValueError(f"Missing webhook configuration variables: {', '.join(missing)}")
+        if not self.app_secret:
+            raise ValueError("INSTAGRAM_APP_SECRET environment variable must be set.")
+        if not self.verify_token:
+            raise ValueError("WEBHOOK_VERIFY_TOKEN environment variable must be set.")
         return self
 
 
 class RedisSettings(BaseModel):
-    url: Optional[str] = Field(default_factory=lambda: os.getenv("REDIS_URL", "").strip() or None)
+    url: Optional[str] = Field(
+        default_factory=lambda: os.getenv("REDIS_URL", "").strip() or None
+    )
     ttl: int = Field(default_factory=lambda: _int_env("REDIS_TTL", 86_400))
 
     @property
@@ -108,18 +112,24 @@ class RedisSettings(BaseModel):
 
 
 class SecuritySettings(BaseModel):
-    secret_key: str = Field(default_factory=lambda: os.getenv("SECRET_KEY", "").strip())
+    secret_key: str = Field(
+        default_factory=lambda: os.getenv("JWT_SECRET_KEY", "").strip()
+    )
 
     @model_validator(mode="after")
     def _validate(self) -> "SecuritySettings":
         if not self.secret_key:
-            raise ValueError("SECRET_KEY environment variable must be set.")
+            raise ValueError("JWT_SECRET_KEY environment variable must be set.")
         return self
 
 
 class JWTSettings(BaseModel):
-    algorithm: str = Field(default_factory=lambda: os.getenv("JWT_ALGORITHM", "HS256").strip() or "HS256")
-    expire_minutes: int = Field(default_factory=lambda: _int_env("JWT_EXPIRE_MINUTES", 30))
+    algorithm: str = Field(
+        default_factory=lambda: os.getenv("JWT_ALGORITHM", "HS256").strip() or "HS256"
+    )
+    expire_minutes: int = Field(
+        default_factory=lambda: _int_env("JWT_EXPIRE_MINUTES", 30)
+    )
 
 
 class Settings(BaseModel):
@@ -127,7 +137,6 @@ class Settings(BaseModel):
     server: ServerSettings = Field(default_factory=ServerSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     instagram: InstagramSettings = Field(default_factory=InstagramSettings)
-    webhook: WebhookSettings = Field(default_factory=WebhookSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     jwt: JWTSettings = Field(default_factory=JWTSettings)

@@ -32,14 +32,9 @@ TEST_DB_URL = "sqlite+aiosqlite:///:memory:?cache=shared"
 
 os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ["SECRET_KEY"] = "test_secret_key"
-os.environ["INSTAGRAM_APP_ID"] = "test_app_id"
 os.environ["INSTAGRAM_APP_SECRET"] = "test_app_secret"
-os.environ["INSTAGRAM_ACCESS_TOKEN"] = "test_access_token"
 os.environ["INSTAGRAM_API_BASE_URL"] = "https://graph.instagram.com/v23.0"
-os.environ["INSTAGRAM_API_TIMEOUT"] = "30"
-os.environ["WEBHOOK_SECRET"] = "test_webhook_secret"
 os.environ["WEBHOOK_VERIFY_TOKEN"] = "test_verify_token"
-os.environ["WEBHOOK_MAX_SIZE"] = "1048576"
 os.environ["HOST"] = "0.0.0.0"
 os.environ["PORT"] = "8100"
 os.environ["LOG_LEVEL"] = "DEBUG"
@@ -51,7 +46,11 @@ from src.core.config import get_settings  # noqa: E402
 get_settings.cache_clear()
 
 from src.core.dependencies import get_redis_cache_service, get_session  # noqa: E402
-from src.core.models import instagram_comment, webhook_log, worker_app  # noqa: E402,F401
+from src.core.models import (
+    instagram_comment,
+    webhook_log,
+    worker_app,
+)  # noqa: E402,F401
 from src.core.models.base import Base  # noqa: E402
 from src.core.models.db_helper import db_helper  # noqa: E402
 from src.main import app  # noqa: E402
@@ -60,6 +59,7 @@ from src.main import app  # noqa: E402
 # ---------------------------------------------------------------------------
 # Event loop
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
@@ -71,6 +71,7 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 # ---------------------------------------------------------------------------
 # Database fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def prepare_database() -> AsyncGenerator[None, None]:
@@ -97,6 +98,7 @@ async def db_session(prepare_database: None) -> AsyncGenerator[AsyncSession, Non
 # Dependency overrides
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def override_dependencies() -> Generator[None, None, None]:
     """Override FastAPI dependencies so the app uses the test resources."""
@@ -120,6 +122,7 @@ def override_dependencies() -> Generator[None, None, None]:
 # ---------------------------------------------------------------------------
 # HTTP client
 # ---------------------------------------------------------------------------
+
 
 @pytest_asyncio.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:

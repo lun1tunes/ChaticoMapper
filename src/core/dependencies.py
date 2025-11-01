@@ -8,7 +8,6 @@ and the application's DI container.
 from typing import Annotated, AsyncGenerator, Optional
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings, get_settings
@@ -19,7 +18,7 @@ from src.core.repositories.user_repository import UserRepository
 from src.core.repositories.webhook_log_repository import WebhookLogRepository
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 from src.core.services.redis_cache_service import RedisCacheService
-from src.core.services.security import TokenDecodeError, safe_decode_token
+from src.core.services.security import TokenDecodeError, oauth2_scheme, safe_decode_token
 from src.core.use_cases.forward_webhook_use_case import ForwardWebhookUseCase
 from src.core.use_cases.process_webhook_use_case import ProcessWebhookUseCase
 from src.api_v1.schemas import TokenData
@@ -127,13 +126,6 @@ def get_process_webhook_use_case(
         forward_webhook_uc=forward_webhook_uc,
         redis_cache=redis_cache,
     )
-
-
-# ============================================================================
-# Authentication Dependencies
-# ============================================================================
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
 async def get_current_user(

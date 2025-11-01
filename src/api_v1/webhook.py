@@ -40,7 +40,7 @@ async def verify_webhook(
             detail=exc.errors(),
         ) from exc
 
-    if verification.hub_verify_token != settings.webhook.verify_token:
+    if verification.hub_verify_token != settings.instagram.verify_token:
         logger.warning("Invalid webhook verify token")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

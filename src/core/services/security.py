@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import jwt
+from fastapi.security import OAuth2PasswordBearer
 from jwt import InvalidTokenError
 from pwdlib import PasswordHash
 from pwdlib.exceptions import HasherNotAvailable
@@ -91,6 +92,14 @@ class _PBKDF2Fallback:
 
 _pbkdf2_fallback = _PBKDF2Fallback() if not ARGON2_HASHER_AVAILABLE else None
 
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="token",
+    scopes={
+        "me": "Read information about the current user.",
+        "items": "Read items.",
+    },
+)
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     if ARGON2_HASHER_AVAILABLE and password_hash is not None:
@@ -112,6 +121,10 @@ def hash_password(password: str) -> str:
     if not _pbkdf2_fallback:
         raise RuntimeError("PBKDF2 fallback hasher is not initialized")
     return _pbkdf2_fallback.hash(password)
+
+
+def get_password_hash(password: str) -> str:
+    return hash_password(password)
 
 
 def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:

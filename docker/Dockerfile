@@ -75,9 +75,5 @@ USER chatico
 # Expose application port
 EXPOSE 8100
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8100}/health || exit 1
-
 # Run migrations and start application
 CMD ["sh", "-c", "cd database && alembic upgrade head && cd .. && uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8100} --workers 2"]
