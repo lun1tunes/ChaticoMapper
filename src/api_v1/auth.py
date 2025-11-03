@@ -61,10 +61,13 @@ async def login_for_access_token(
     )
 
     base_url: Optional[str] = None
-    worker_app = await worker_app_repo.get_by_account_id(user.email)
+    worker_app = None
+    if user.id:
+        worker_app = await worker_app_repo.get_by_user_id(user.id)
+    if not worker_app:
+        worker_app = await worker_app_repo.get_by_account_id(user.email)
     if worker_app:
         base_url = worker_app.base_url
 
     logger.info("Issued access token for %s", user.email)
     return Token(access_token=access_token, token_type="bearer", base_url=base_url, scopes=scopes)
-

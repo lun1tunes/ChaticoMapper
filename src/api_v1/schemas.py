@@ -155,6 +155,9 @@ class WorkerAppCreate(BaseModel):
         ..., description="Instagram username of the owner", min_length=1, max_length=255
     )
     base_url: AnyHttpUrl = Field(..., description="Base URL for HTTP requests")
+    user_id: UUID | None = Field(
+        None, description="Associated application user ID (optional)"
+    )
 
 
 class WorkerAppUpdate(BaseModel):
@@ -164,6 +167,9 @@ class WorkerAppUpdate(BaseModel):
         None, description="Instagram username of the owner", min_length=1, max_length=255
     )
     base_url: Optional[AnyHttpUrl] = Field(None, description="Base URL for HTTP requests")
+    user_id: UUID | None = Field(
+        None, description="Associated application user ID (optional)"
+    )
 
 
 class WorkerAppResponse(BaseModel):
@@ -175,6 +181,7 @@ class WorkerAppResponse(BaseModel):
         ..., description="Instagram username of the owner"
     )
     base_url: str = Field(..., description="Base URL for HTTP requests")
+    user_id: UUID | None = Field(None, description="Associated application user ID")
     created_at: datetime = Field(..., description="Created timestamp")
     updated_at: datetime = Field(..., description="Updated timestamp")
 

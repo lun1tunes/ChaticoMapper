@@ -1,6 +1,7 @@
 """Repository for WorkerApp model."""
 
 from typing import Optional
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,21 @@ class WorkerAppRepository(BaseRepository[WorkerApp]):
         """
         result = await self.session.execute(
             select(WorkerApp).where(WorkerApp.account_id == account_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_user_id(self, user_id: UUID) -> Optional[WorkerApp]:
+        """
+        Get worker app associated with a specific application user.
+
+        Args:
+            user_id: User ID
+
+        Returns:
+            WorkerApp if found, None otherwise
+        """
+        result = await self.session.execute(
+            select(WorkerApp).where(WorkerApp.user_id == user_id)
         )
         return result.scalar_one_or_none()
 

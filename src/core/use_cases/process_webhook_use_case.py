@@ -235,6 +235,7 @@ class ProcessWebhookUseCase:
                 "account_id": worker_app.account_id,
                 "owner_instagram_username": worker_app.owner_instagram_username,
                 "base_url": worker_app.base_url,
+                "user_id": str(worker_app.user_id) if worker_app.user_id else None,
             }
             await self.redis_cache.set_worker_app(account_id, cache_payload)
 
