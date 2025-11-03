@@ -43,8 +43,16 @@ async def lifespan(app: FastAPI):
         async with db_helper.engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
         logger.info("Database connection successful")
+        app.state.health_snapshot = {
+            "status": "healthy",
+            "services": {"database": "healthy"},
+        }
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
+        app.state.health_snapshot = {
+            "status": "degraded",
+            "services": {"database": "unhealthy", "detail": str(e)},
+        }
         raise
 
     logger.info(
@@ -116,30 +124,20 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/health")
-    async def health():
+    async def health(request: Request):
         """
         Health check endpoint.
 
         Returns:
             Health status of the application and its dependencies
         """
-        try:
-            # Check database connection
-            async with db_helper.engine.begin() as conn:
-                await conn.execute(text("SELECT 1"))
-            db_status = "healthy"
-        except Exception as e:
-            logger.error(f"Database health check failed: {e}")
-            db_status = "unhealthy"
-
-        overall_status = "healthy" if db_status == "healthy" else "degraded"
-
-        return {
-            "status": overall_status,
-            "services": {
-                "database": db_status,
-            },
-        }
+        snapshot = getattr(request.app.state, "health_snapshot", None)
+        if snapshot is None:
+            snapshot = {
+                "status": "unknown",
+                "services": {},
+            }
+        return snapshot
 
     # ========================================
     # Exception Handlers
