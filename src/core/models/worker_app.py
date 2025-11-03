@@ -37,6 +37,11 @@ class WorkerApp(Base):
         nullable=False,
         comment="Base URL (including path) for forwarding webhooks",
     )
+    webhook_url: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        comment="Webhook endpoint URL for forwarding requests",
+    )
     user_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
@@ -66,5 +71,5 @@ class WorkerApp(Base):
     def __repr__(self) -> str:
         return (
             f"<WorkerApp(id={self.id}, account_id={self.account_id}, "
-            f"base_url={self.base_url}, user_id={self.user_id})>"
+            f"base_url={self.base_url}, webhook_url={self.webhook_url}, user_id={self.user_id})>"
         )

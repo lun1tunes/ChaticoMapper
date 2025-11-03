@@ -15,7 +15,8 @@ async def test_forwarding_keeps_original_headers(client, db_session, monkeypatch
     worker_app = WorkerApp(
         account_id="acct-123",
         owner_instagram_username="owneruser",
-        base_url="https://worker.example/webhook",
+        base_url="https://worker.example",
+        webhook_url="https://worker.example/webhook",
     )
     db_session.add(worker_app)
     await db_session.commit()
@@ -77,7 +78,7 @@ async def test_forwarding_keeps_original_headers(client, db_session, monkeypatch
     response = await client.post("/api/v1/webhook", json=payload, headers=headers)
 
     assert response.status_code == 200
-    assert captured["url"] == worker_app.base_url
+    assert captured["url"] == worker_app.webhook_url
     expected_payload = WebhookPayload.model_validate(payload).model_dump(by_alias=True)
     assert captured["json"] == expected_payload
 

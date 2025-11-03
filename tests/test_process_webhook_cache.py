@@ -37,7 +37,8 @@ async def test_get_worker_app_cached_uses_redis(db_session):
     worker_app = WorkerApp(
         account_id="acct-cache-test",
         owner_instagram_username="cache-user",
-        base_url="https://worker-cache.example/api",
+        base_url="https://worker-cache.example",
+        webhook_url="https://worker-cache.example/api",
     )
     db_session.add(worker_app)
     await db_session.commit()
@@ -55,6 +56,7 @@ async def test_get_worker_app_cached_uses_redis(db_session):
     assert worker_from_db.id == worker_app.id
     assert redis_cache.get_calls == [worker_app.account_id]
     assert redis_cache.set_calls[0][0] == worker_app.account_id
+    assert redis_cache.set_calls[0][1]["webhook_url"] == worker_app.webhook_url
 
     # Second lookup: should hit cache and avoid re-populating.
     worker_from_cache = await use_case._get_worker_app_cached(worker_app.account_id)

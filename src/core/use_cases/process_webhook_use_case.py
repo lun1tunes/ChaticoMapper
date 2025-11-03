@@ -190,6 +190,7 @@ class ProcessWebhookUseCase:
                 "account_id": account_id,
                 "worker_app_username": worker_app.owner_instagram_username,
                 "worker_app_base_url": worker_app.base_url,
+                "worker_app_webhook_url": worker_app.webhook_url,
                 "processing_time_ms": forward_result.get("processing_time_ms"),
             }
         else:
@@ -235,6 +236,7 @@ class ProcessWebhookUseCase:
                 "account_id": worker_app.account_id,
                 "owner_instagram_username": worker_app.owner_instagram_username,
                 "base_url": worker_app.base_url,
+                "webhook_url": worker_app.webhook_url,
                 "user_id": str(worker_app.user_id) if worker_app.user_id else None,
             }
             await self.redis_cache.set_worker_app(account_id, cache_payload)

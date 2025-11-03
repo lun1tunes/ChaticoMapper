@@ -118,7 +118,7 @@ class ForwardWebhookUseCase:
         Returns:
             dict with success status and details
         """
-        url = worker_app.base_url
+        url = worker_app.webhook_url or worker_app.base_url
         headers = self._prepare_forward_headers(
             webhook_id=webhook_id,
             original_headers=original_headers,
@@ -136,7 +136,7 @@ class ForwardWebhookUseCase:
                     logger.info(
                         "Forwarded webhook to %s (%s) status=%s",
                         worker_app.owner_instagram_username,
-                        worker_app.base_url,
+                        url,
                         response.status_code,
                     )
                     return {
@@ -147,9 +147,9 @@ class ForwardWebhookUseCase:
                     }
                 else:
                     logger.warning(
-                        "Worker app responded with non-success status: username=%s base_url=%s status=%s",
+                        "Worker app responded with non-success status: username=%s webhook_url=%s status=%s",
                         worker_app.owner_instagram_username,
-                        worker_app.base_url,
+                        url,
                         response.status_code,
                     )
                     return {
@@ -162,9 +162,9 @@ class ForwardWebhookUseCase:
 
         except httpx.TimeoutException:
             logger.error(
-                "Timeout forwarding to %s (%s)",
+                "Timeout forwarding to %s (webhook_url=%s)",
                 worker_app.owner_instagram_username,
-                worker_app.base_url,
+                url,
             )
             return {
                 "success": False,
@@ -174,9 +174,9 @@ class ForwardWebhookUseCase:
 
         except httpx.RequestError as e:
             logger.error(
-                "Request error forwarding to %s (%s): %s",
+                "Request error forwarding to %s (webhook_url=%s): %s",
                 worker_app.owner_instagram_username,
-                worker_app.base_url,
+                url,
                 e,
             )
             return {
@@ -242,7 +242,7 @@ class ForwardWebhookUseCase:
                 account_id=account_id,
                 worker_app_id=worker_app.id,
                 target_owner_username=worker_app.owner_instagram_username,
-                target_base_url=worker_app.base_url,
+                target_base_url=worker_app.webhook_url or worker_app.base_url,
                 status="success" if result.get("success") else "failed",
                 error_message=result.get("error"),
                 processing_time_ms=processing_time_ms,

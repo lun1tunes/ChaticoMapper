@@ -21,7 +21,8 @@ async def test_token_includes_worker_app_base_url(client, db_session):
     worker_app = WorkerApp(
         account_id="acct-123",
         owner_instagram_username="owneruser",
-        base_url="https://worker.example/webhook",
+        base_url="https://worker.example",
+        webhook_url="https://worker.example/webhook",
         user_id=user.id,
     )
 

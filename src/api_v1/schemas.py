@@ -158,6 +158,9 @@ class WorkerAppCreate(BaseModel):
     user_id: UUID | None = Field(
         None, description="Associated application user ID (optional)"
     )
+    webhook_url: AnyHttpUrl | None = Field(
+        None, description="Direct webhook endpoint URL for forwarding"
+    )
 
 
 class WorkerAppUpdate(BaseModel):
@@ -169,6 +172,9 @@ class WorkerAppUpdate(BaseModel):
     base_url: Optional[AnyHttpUrl] = Field(None, description="Base URL for HTTP requests")
     user_id: UUID | None = Field(
         None, description="Associated application user ID (optional)"
+    )
+    webhook_url: Optional[AnyHttpUrl] = Field(
+        None, description="Direct webhook endpoint URL for forwarding"
     )
 
 
@@ -182,6 +188,7 @@ class WorkerAppResponse(BaseModel):
     )
     base_url: str = Field(..., description="Base URL for HTTP requests")
     user_id: UUID | None = Field(None, description="Associated application user ID")
+    webhook_url: str = Field(..., description="Webhook endpoint URL for forwarding")
     created_at: datetime = Field(..., description="Created timestamp")
     updated_at: datetime = Field(..., description="Updated timestamp")
 

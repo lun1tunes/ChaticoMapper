@@ -57,6 +57,9 @@ async def create_worker_app(
         owner_instagram_username=worker_app_data.owner_instagram_username,
         base_url=str(worker_app_data.base_url),
         user_id=worker_app_data.user_id,
+        webhook_url=str(
+            worker_app_data.webhook_url or worker_app_data.base_url
+        ),
     )
 
     await repo.create(worker_app)
@@ -177,6 +180,8 @@ async def update_worker_app(
         worker_app.base_url = str(worker_app_data.base_url)
     if worker_app_data.user_id is not None:
         worker_app.user_id = worker_app_data.user_id
+    if worker_app_data.webhook_url is not None:
+        worker_app.webhook_url = str(worker_app_data.webhook_url)
 
     await session.commit()
     await session.refresh(worker_app)
