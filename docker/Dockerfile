@@ -76,4 +76,4 @@ USER chatico
 EXPOSE 8100
 
 # Run migrations and start application
-CMD ["sh", "-c", "cd database && alembic upgrade head && cd .. && uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8100} --workers 2"]
+CMD ["sh", "-c", "cd database && alembic upgrade head && cd .. && uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8100} --workers 1"]

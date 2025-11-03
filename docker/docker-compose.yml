@@ -76,8 +76,7 @@ services:
       - "${APP_PORT:-8100}:8100"
     networks:
       - mapper-network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - instagram-network
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,3 +104,6 @@ networks:
   mapper-network:
     driver: bridge
     name: mapper-app-network
+  instagram-network:
+    external: true
+    name: instachatico-network
