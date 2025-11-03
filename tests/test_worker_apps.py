@@ -1,6 +1,8 @@
 import pytest
+from sqlalchemy import delete
 
 from src.core.models.user import User, UserRole
+from src.core.models.worker_app import WorkerApp
 from src.core.services.security import hash_password
 
 
@@ -26,6 +28,9 @@ async def _get_token(client, *, username: str, password: str) -> str:
 
 @pytest.mark.asyncio
 async def test_list_worker_apps_returns_empty_for_admin(client, db_session):
+    await db_session.execute(delete(WorkerApp))
+    await db_session.commit()
+
     email = "admin@example.com"
     password = "test-password"
     await _create_user(db_session, email=email, password=password, role=UserRole.ADMIN)

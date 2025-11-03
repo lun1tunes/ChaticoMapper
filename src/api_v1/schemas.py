@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from src.core.models.user import UserRole
+from src.core.utils.time import now_utc
 
 # =============================================================================
 # Webhook payload schemas (copied from instachatico-app)
@@ -91,7 +92,7 @@ class WebhookEntry(BaseModel):
     @classmethod
     def validate_timestamp(cls, v: int) -> int:
         """Ensure timestamp is reasonable (not too old, not in future)."""
-        now = int(datetime.utcnow().timestamp())
+        now = int(datetime.now(timezone.utc).timestamp())
         if v > now + 3600:
             raise ValueError("Timestamp is too far in the future")
         if v < now - 86400 * 7:
@@ -211,7 +212,7 @@ class ErrorResponse(BaseModel):
     message: str = Field(..., description="Error message")
     details: Optional[Dict[str, Any]] = Field(None, description="Error details")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Error timestamp"
+        default_factory=now_utc, description="Error timestamp"
     )
 
 
@@ -252,4 +253,3 @@ class UserResponse(UserBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
-

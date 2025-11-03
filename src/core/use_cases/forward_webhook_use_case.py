@@ -33,6 +33,7 @@ class ForwardWebhookUseCase:
         worker_app: WorkerApp,
         webhook_payload: dict,
         account_id: str,
+        original_headers: dict[str, str] | None = None,
     ) -> dict:
         """
         Forward webhook to worker app and log result.
@@ -41,6 +42,7 @@ class ForwardWebhookUseCase:
             worker_app: WorkerApp configuration
             webhook_payload: Original Instagram webhook payload
             account_id: Instagram account ID
+            original_headers: Headers received from Instagram webhook request
 
         Returns:
             dict with:
@@ -60,6 +62,7 @@ class ForwardWebhookUseCase:
                 worker_app=worker_app,
                 webhook_payload=webhook_payload,
                 webhook_id=webhook_id,
+                original_headers=original_headers,
             )
 
             processing_time_ms = int((time.time() - start_time) * 1000)
@@ -101,6 +104,7 @@ class ForwardWebhookUseCase:
         worker_app: WorkerApp,
         webhook_payload: dict,
         webhook_id: str,
+        original_headers: dict[str, str] | None = None,
     ) -> dict:
         """
         Forward webhook via HTTP POST.
@@ -109,22 +113,23 @@ class ForwardWebhookUseCase:
             worker_app: WorkerApp configuration
             webhook_payload: Webhook payload to forward
             webhook_id: Unique webhook identifier
+            original_headers: Headers received from Instagram webhook request
 
         Returns:
             dict with success status and details
         """
         url = worker_app.base_url
+        headers = self._prepare_forward_headers(
+            webhook_id=webhook_id,
+            original_headers=original_headers,
+        )
 
         try:
             async with httpx.AsyncClient(timeout=self.http_timeout) as client:
                 response = await client.post(
                     url,
                     json=webhook_payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "X-Webhook-ID": webhook_id,
-                        "X-Forwarded-From": "chatico-mapper",
-                    },
+                    headers=headers,
                 )
 
                 if response.status_code in (200, 201, 202, 204):
@@ -179,6 +184,39 @@ class ForwardWebhookUseCase:
                 "method": "http",
                 "error": f"Request error: {str(e)}",
             }
+
+    def _prepare_forward_headers(
+        self,
+        webhook_id: str,
+        original_headers: dict[str, str] | None,
+    ) -> dict[str, str]:
+        """
+        Merge original webhook headers with forwarding metadata.
+
+        Args:
+            webhook_id: Unique webhook identifier
+            original_headers: Headers received from the Instagram webhook request
+
+        Returns:
+            dict[str, str]: Headers to use when forwarding the webhook
+        """
+        headers: dict[str, str] = {}
+
+        if original_headers:
+            for key, value in original_headers.items():
+                if not value:
+                    continue
+                lower_key = key.lower()
+                if lower_key in {"host", "content-length", "connection"}:
+                    continue
+                headers[key] = value
+
+        if not any(key.lower() == "content-type" for key in headers):
+            headers["Content-Type"] = "application/json"
+        headers["X-Webhook-ID"] = webhook_id
+        headers["X-Forwarded-From"] = "chatico-mapper"
+
+        return headers
 
     async def _create_log_entry(
         self,

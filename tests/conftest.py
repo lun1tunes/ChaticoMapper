@@ -13,7 +13,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import AsyncGenerator, Generator
+from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -57,32 +57,22 @@ from src.main import app  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Event loop
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
-# ---------------------------------------------------------------------------
 # Database fixtures
 # ---------------------------------------------------------------------------
 
-
-@pytest_asyncio.fixture(scope="session", autouse=True)
-async def prepare_database() -> AsyncGenerator[None, None]:
+@pytest.fixture(scope="session", autouse=True)
+def prepare_database() -> AsyncGenerator[None, None]:
     """Initialise the in-memory SQLite schema for tests."""
-    async with db_helper.engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+    async def _setup() -> None:
+        async with db_helper.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.run(_setup())
 
     yield
 
-    await db_helper.dispose()
+    asyncio.run(db_helper.dispose())
 
 
 @pytest_asyncio.fixture

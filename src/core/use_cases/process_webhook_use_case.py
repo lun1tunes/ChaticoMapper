@@ -41,12 +41,17 @@ class ProcessWebhookUseCase:
         self.worker_app_repo = WorkerAppRepository(session)
         self.comment_repo = InstagramCommentRepository(session)
 
-    async def execute(self, webhook_payload: dict) -> dict:
+    async def execute(
+        self,
+        webhook_payload: dict,
+        original_headers: dict[str, str] | None = None,
+    ) -> dict:
         """
         Process Instagram webhook payload.
 
         Args:
             webhook_payload: Instagram webhook payload dict
+            original_headers: Original webhook headers to propagate to worker apps
 
         Returns:
             dict with:
@@ -76,7 +81,11 @@ class ProcessWebhookUseCase:
         # Process each comment
         for comment_data in comments:
             try:
-                result = await self._process_single_comment(comment_data, webhook_payload)
+                result = await self._process_single_comment(
+                    comment_data,
+                    webhook_payload,
+                    original_headers=original_headers,
+                )
 
                 if result.get("success"):
                     comments_processed += 1
@@ -102,7 +111,8 @@ class ProcessWebhookUseCase:
     async def _process_single_comment(
         self,
         comment_data: dict,
-        webhook_payload: dict
+        webhook_payload: dict,
+        original_headers: dict[str, str] | None = None,
     ) -> dict:
         """
         Process a single comment from webhook.
@@ -110,6 +120,7 @@ class ProcessWebhookUseCase:
         Args:
             comment_data: Extracted comment data
             webhook_payload: Full webhook payload for forwarding
+            original_headers: Original webhook headers to reuse
 
         Returns:
             dict with success status and details
@@ -163,6 +174,7 @@ class ProcessWebhookUseCase:
             worker_app=worker_app,
             webhook_payload=webhook_payload,
             account_id=account_id,
+            original_headers=original_headers,
         )
 
         if forward_result.get("success"):
