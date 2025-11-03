@@ -95,7 +95,7 @@ async def process_webhook(
             webhook_id=trace_id,
         )
 
-    errors = result.get("errors", [])
+    errors = result.get("errors") or []
     error_msg = "; ".join(errors) if errors else "Unknown error"
     logger.error("Webhook processing failed | errors=%s", error_msg)
     return RoutingResponse(

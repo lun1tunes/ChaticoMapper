@@ -96,7 +96,7 @@ class InstagramSettings(BaseModel):
         if not self.app_secret:
             raise ValueError("INSTAGRAM_APP_SECRET environment variable must be set.")
         if not self.verify_token:
-            raise ValueError("WEBHOOK_VERIFY_TOKEN environment variable must be set.")
+            raise ValueError("WEBHOOK_INIT_VERIFY_TOKEN environment variable must be set.")
         return self
 
 

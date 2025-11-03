@@ -31,10 +31,10 @@ if str(ROOT) not in sys.path:
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:?cache=shared"
 
 os.environ["DATABASE_URL"] = TEST_DB_URL
-os.environ["SECRET_KEY"] = "test_secret_key"
+os.environ["JWT_SECRET_KEY"] = "test_secret_key"
 os.environ["INSTAGRAM_APP_SECRET"] = "test_app_secret"
 os.environ["INSTAGRAM_API_BASE_URL"] = "https://graph.instagram.com/v23.0"
-os.environ["WEBHOOK_VERIFY_TOKEN"] = "test_verify_token"
+os.environ["WEBHOOK_INIT_VERIFY_TOKEN"] = "test_verify_token"
 os.environ["HOST"] = "0.0.0.0"
 os.environ["PORT"] = "8100"
 os.environ["LOG_LEVEL"] = "DEBUG"
