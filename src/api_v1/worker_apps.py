@@ -13,7 +13,8 @@ from src.api_v1.schemas import (
     WorkerAppResponse,
     WorkerAppListResponse,
 )
-from src.core.dependencies import get_session, get_worker_app_repository
+from src.core.dependencies import get_current_admin_user, get_session, get_worker_app_repository
+from src.core.models.user import User
 from src.core.models.worker_app import WorkerApp
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 
@@ -28,6 +29,7 @@ async def create_worker_app(
     worker_app_data: WorkerAppCreate,
     session: Annotated[AsyncSession, Depends(get_session)],
     repo: Annotated[WorkerAppRepository, Depends(get_worker_app_repository)],
+    _admin_user: Annotated[User, Depends(get_current_admin_user)],
 ):
     """
     Create a new worker app configuration.
@@ -73,6 +75,7 @@ async def create_worker_app(
 @router.get("", response_model=WorkerAppListResponse)
 @router.get("/", response_model=WorkerAppListResponse)
 async def list_worker_apps(
+    _admin_user: Annotated[User, Depends(get_current_admin_user)],
     repo: Annotated[WorkerAppRepository, Depends(get_worker_app_repository)],
     page: int = 1,
     size: int = 50,
@@ -109,6 +112,7 @@ async def list_worker_apps(
 async def get_worker_app(
     worker_app_id: UUID,
     repo: Annotated[WorkerAppRepository, Depends(get_worker_app_repository)],
+    _admin_user: Annotated[User, Depends(get_current_admin_user)],
 ):
     """
     Get a specific worker app by ID.
@@ -140,6 +144,7 @@ async def update_worker_app(
     worker_app_data: WorkerAppUpdate,
     session: Annotated[AsyncSession, Depends(get_session)],
     repo: Annotated[WorkerAppRepository, Depends(get_worker_app_repository)],
+    _admin_user: Annotated[User, Depends(get_current_admin_user)],
 ):
     """
     Update a worker app configuration.
@@ -183,6 +188,7 @@ async def delete_worker_app(
     worker_app_id: UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
     repo: Annotated[WorkerAppRepository, Depends(get_worker_app_repository)],
+    _admin_user: Annotated[User, Depends(get_current_admin_user)],
 ):
     """
     Delete a worker app.
@@ -214,6 +220,7 @@ async def delete_worker_app(
 async def get_worker_app_by_account(
     account_id: str,
     repo: Annotated[WorkerAppRepository, Depends(get_worker_app_repository)],
+    _admin_user: Annotated[User, Depends(get_current_admin_user)],
 ):
     """
     Get worker app by Instagram account ID.

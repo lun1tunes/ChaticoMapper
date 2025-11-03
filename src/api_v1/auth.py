@@ -11,7 +11,12 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from src.api_v1.schemas import Token
 from src.core.config import get_settings
-from src.core.dependencies import get_user_repository, get_worker_app_repository
+from src.core.dependencies import (
+    get_current_admin_user,
+    get_user_repository,
+    get_worker_app_repository,
+)
+from src.core.models.user import User, UserRole
 from src.core.repositories.user_repository import UserRepository
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 from src.core.services.auth_service import authenticate_user
@@ -41,9 +46,17 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    scopes = ["me"]
+    if (user.role or "").lower() == UserRole.ADMIN.value:
+        scopes.append("admin")
+
     access_token_expires = timedelta(minutes=settings.jwt.expire_minutes)
     access_token = create_access_token(
-        data={"sub": user.email},
+        data={
+            "sub": user.email,
+            "role": user.role,
+            "scopes": scopes,
+        },
         expires_delta=access_token_expires,
     )
 
@@ -53,4 +66,5 @@ async def login_for_access_token(
         base_url = worker_app.base_url
 
     logger.info("Issued access token for %s", user.email)
-    return Token(access_token=access_token, token_type="bearer", base_url=base_url)
+    return Token(access_token=access_token, token_type="bearer", base_url=base_url, scopes=scopes)
+

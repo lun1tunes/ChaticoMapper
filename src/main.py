@@ -73,7 +73,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description="Instagram webhook mapper for routing comments to worker applications",
+        description="Auth management and Instagram webhook mapper for routing comments to worker applications",
         debug=settings.debug,
         lifespan=lifespan,
     )
@@ -220,7 +220,9 @@ async def verify_webhook_signature(request: Request, call_next):
                     logging.info("Signature verification successful")
             else:
                 # Check if we're in development mode (allow requests without signature for testing)
-                development_mode = os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
+                development_mode = (
+                    os.getenv("DEVELOPMENT_MODE", "false").lower() == "true"
+                )
 
                 if development_mode:
                     logging.warning(

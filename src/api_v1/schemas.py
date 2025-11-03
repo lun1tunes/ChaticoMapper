@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from src.core.models.user import UserRole
 
 # =============================================================================
 # Webhook payload schemas (copied from instachatico-app)
@@ -223,10 +224,13 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     base_url: Optional[str] = None
+    scopes: Optional[List[str]] = None
 
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+    scopes: List[str] = Field(default_factory=list)
+    role: Optional[UserRole] = None
 
     model_config = ConfigDict(extra="ignore")
 
@@ -234,6 +238,7 @@ class TokenData(BaseModel):
 class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
+    role: UserRole = Field(default=UserRole.BASIC)
 
 
 class UserCreate(UserBase):
@@ -247,3 +252,4 @@ class UserResponse(UserBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
