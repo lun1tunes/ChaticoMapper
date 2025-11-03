@@ -201,6 +201,14 @@ class Settings(BaseModel):
         return self.redis.ttl
 
     @property
+    def app_secret(self) -> str:
+        return self.instagram.app_secret
+
+    @property
+    def instagram_verify_token(self) -> str:
+        return self.instagram.verify_token
+
+    @property
     def redis_enabled(self) -> bool:
         return self.redis.enabled
 

@@ -61,6 +61,7 @@ def configure_logging(default_level: Optional[str] = None) -> None:
         "filters": {
             "channel": {"()": "src.core.logging_config.ChannelAliasFilter"},
             "trace": {"()": "src.core.logging_config.TraceIdFilter"},
+            "suppress_health": {"()": "src.core.logging_config.SuppressHealthAccessFilter"},
         },
         "formatters": {
             "default": {
@@ -89,7 +90,7 @@ def configure_logging(default_level: Optional[str] = None) -> None:
                 "formatter": "uvicorn_access",
                 "level": level if level != "DEBUG" else "INFO",
                 "stream": "ext://sys.stdout",
-                "filters": ["channel", "trace"],
+                "filters": ["channel", "trace", "suppress_health"],
             },
         },
         "loggers": {
@@ -162,3 +163,9 @@ def configure_logging(default_level: Optional[str] = None) -> None:
 
     dictConfig(config)
     logging.getLogger(__name__).debug("Logging configured with level %s", level)
+class SuppressHealthAccessFilter(logging.Filter):
+    """Filter out noisy /health access logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - trivial
+        message = record.getMessage()
+        return "/health" not in message
