@@ -5,11 +5,14 @@ Provides easy integration between FastAPI's dependency system
 and the application's DI container.
 """
 
+import logging
 from typing import Annotated, AsyncGenerator, Optional
 
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import SecurityScopes
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from redis.exceptions import RedisError
 
 from src.core.config import Settings, get_settings
 from src.core.models.db_helper import db_helper
@@ -23,6 +26,9 @@ from src.core.services.security import TokenDecodeError, oauth2_scheme, safe_dec
 from src.core.use_cases.forward_webhook_use_case import ForwardWebhookUseCase
 from src.core.use_cases.process_webhook_use_case import ProcessWebhookUseCase
 from src.api_v1.schemas import TokenData
+
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -99,7 +105,12 @@ async def get_redis_cache_service(
         redis_url=redis_url,
         default_ttl=settings.redis.ttl,
     )
-    await service.connect()
+    try:
+        await service.connect()
+    except RedisError as exc:
+        logger.warning("Redis unavailable, continuing without cache: %s", exc)
+        yield None
+        return
     try:
         yield service
     finally:
