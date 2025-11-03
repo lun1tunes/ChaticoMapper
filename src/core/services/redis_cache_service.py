@@ -51,7 +51,7 @@ class RedisCacheService:
                 await self._client.ping()
                 logger.info("Redis connection established successfully")
             except RedisError as e:
-                logger.error(f"Failed to connect to Redis: {e}")
+                logger.warning(f"Failed to connect to Redis: {e}")
                 raise
 
     async def disconnect(self) -> None:

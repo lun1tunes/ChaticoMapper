@@ -19,7 +19,7 @@ async def test_token_includes_worker_app_base_url(client, db_session):
     await db_session.refresh(user)
 
     worker_app = WorkerApp(
-        account_id="acct-123",
+        account_id="acct-auth-test",
         owner_instagram_username="owneruser",
         base_url="https://worker.example",
         webhook_url="https://worker.example/webhook",

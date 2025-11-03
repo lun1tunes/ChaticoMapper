@@ -71,10 +71,13 @@ services:
       DATABASE_URL: postgresql+asyncpg://chatico_user:${POSTGRES_PASSWORD:-chatico_password}@postgres:5432/chatico_mapper
       HOST: 0.0.0.0
       PORT: 8100
+      REDIS_URL: redis://:${REDIS_PASSWORD:-chatico_password}@redis:6379/0
     ports:
       - "${APP_PORT:-8100}:8100"
     networks:
       - mapper-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
