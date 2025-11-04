@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 from typing import Any, Dict
 
 import httpx
@@ -40,6 +41,7 @@ async def test_forwarding_keeps_original_headers(client, db_session, monkeypatch
         async def post(self, url: str, *args: Any, **kwargs: Any) -> _DummyResponse:
             captured["url"] = url
             captured["json"] = kwargs.get("json")
+            captured["content"] = kwargs.get("content")
             captured["headers"] = dict(kwargs.get("headers") or {})
             return _DummyResponse()
 
@@ -69,18 +71,23 @@ async def test_forwarding_keeps_original_headers(client, db_session, monkeypatch
         ],
     }
 
+    json_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
     headers = {
         "content-type": "application/json",
         "authorization": "Bearer abc",
         "x-custom-token": "sample-token",
     }
 
-    response = await client.post("/api/v1/webhook", json=payload, headers=headers)
+    response = await client.post(
+        "/api/v1/webhook",
+        content=json_body,
+        headers=headers,
+    )
 
     assert response.status_code == 200
     assert captured["url"] == worker_app.webhook_url
-    expected_payload = WebhookPayload.model_validate(payload).model_dump(by_alias=True)
-    assert captured["json"] == expected_payload
+    assert captured["json"] is None
+    assert captured["content"] == json_body
 
     forwarded_headers = {key.lower(): value for key, value in captured["headers"].items()}
     assert forwarded_headers["authorization"] == headers["authorization"]

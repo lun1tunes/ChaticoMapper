@@ -71,11 +71,15 @@ async def process_webhook(
 
     payload_dict = webhook_payload.model_dump(by_alias=True)
     original_headers = {key: value for key, value in request.headers.items()}
+    raw_payload: bytes | None = getattr(request.state, "body", None)
+    if raw_payload is None:
+        raw_payload = await request.body()
 
     try:
         result = await process_webhook_uc.execute(
             webhook_payload=payload_dict,
             original_headers=original_headers,
+            raw_payload=raw_payload,
         )
     except Exception as exc:  # pragma: no cover - safety net
         logger.exception("Unexpected error processing webhook: %s", exc)

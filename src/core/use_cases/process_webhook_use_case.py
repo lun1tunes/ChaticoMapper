@@ -45,6 +45,7 @@ class ProcessWebhookUseCase:
         self,
         webhook_payload: dict,
         original_headers: dict[str, str] | None = None,
+        raw_payload: bytes | None = None,
     ) -> dict:
         """
         Process Instagram webhook payload.
@@ -85,6 +86,7 @@ class ProcessWebhookUseCase:
                     comment_data,
                     webhook_payload,
                     original_headers=original_headers,
+                    raw_payload=raw_payload,
                 )
 
                 if result.get("success"):
@@ -113,6 +115,7 @@ class ProcessWebhookUseCase:
         comment_data: dict,
         webhook_payload: dict,
         original_headers: dict[str, str] | None = None,
+        raw_payload: bytes | None = None,
     ) -> dict:
         """
         Process a single comment from webhook.
@@ -175,6 +178,7 @@ class ProcessWebhookUseCase:
             webhook_payload=webhook_payload,
             account_id=account_id,
             original_headers=original_headers,
+            raw_payload=raw_payload,
         )
 
         if forward_result.get("success"):
@@ -293,6 +297,14 @@ class ProcessWebhookUseCase:
 
                 if not all([comment_id, account_id, user_id, username]):
                     logger.warning(f"Incomplete comment data, skipping: {value}")
+                    continue
+
+                if user_id == account_id:
+                    logger.debug(
+                        "Skipping comment from account owner | comment_id=%s account_id=%s",
+                        comment_id,
+                        account_id,
+                    )
                     continue
 
                 comments.append({

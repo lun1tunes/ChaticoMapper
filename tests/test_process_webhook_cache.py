@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import pytest
@@ -64,3 +65,55 @@ async def test_get_worker_app_cached_uses_redis(db_session):
     assert worker_from_cache.id == worker_app.id
     assert redis_cache.get_calls == [worker_app.account_id, worker_app.account_id]
     assert len(redis_cache.set_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_skips_owner_comments(db_session):
+    worker_app = WorkerApp(
+        account_id="acct-owner",
+        owner_instagram_username="owneruser",
+        base_url="https://worker-owner.example",
+        webhook_url="https://worker-owner.example/webhook",
+    )
+    db_session.add(worker_app)
+    await db_session.commit()
+
+    use_case = ProcessWebhookUseCase(
+        session=db_session,
+        forward_webhook_uc=_DummyForwardWebhookUseCase(),
+        redis_cache=None,
+    )
+
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": worker_app.account_id,
+                "time": int(datetime.now(tz=timezone.utc).timestamp()),
+                "changes": [
+                    {
+                        "field": "comments",
+                        "value": {
+                            "id": "owner-comment",
+                            "text": "auto-response",
+                            "from": {
+                                "id": worker_app.account_id,
+                                "username": worker_app.owner_instagram_username,
+                            },
+                            "media": {"id": "media-1"},
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    result = await use_case.execute(
+        webhook_payload=payload,
+        original_headers={"content-type": "application/json"},
+        raw_payload=b"{}",
+    )
+
+    assert result["success"] is True
+    assert result["comments_processed"] == 0
+    assert await use_case.comment_repo.exists_by_comment_id("owner-comment") is False

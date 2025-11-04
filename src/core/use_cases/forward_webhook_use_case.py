@@ -34,6 +34,7 @@ class ForwardWebhookUseCase:
         webhook_payload: dict,
         account_id: str,
         original_headers: dict[str, str] | None = None,
+        raw_payload: bytes | None = None,
     ) -> dict:
         """
         Forward webhook to worker app and log result.
@@ -63,6 +64,7 @@ class ForwardWebhookUseCase:
                 webhook_payload=webhook_payload,
                 webhook_id=webhook_id,
                 original_headers=original_headers,
+                raw_payload=raw_payload,
             )
 
             processing_time_ms = int((time.time() - start_time) * 1000)
@@ -105,6 +107,7 @@ class ForwardWebhookUseCase:
         webhook_payload: dict,
         webhook_id: str,
         original_headers: dict[str, str] | None = None,
+        raw_payload: bytes | None = None,
     ) -> dict:
         """
         Forward webhook via HTTP POST.
@@ -126,11 +129,18 @@ class ForwardWebhookUseCase:
 
         try:
             async with httpx.AsyncClient(timeout=self.http_timeout) as client:
-                response = await client.post(
-                    url,
-                    json=webhook_payload,
-                    headers=headers,
-                )
+                if raw_payload is not None:
+                    response = await client.post(
+                        url,
+                        content=raw_payload,
+                        headers=headers,
+                    )
+                else:
+                    response = await client.post(
+                        url,
+                        json=webhook_payload,
+                        headers=headers,
+                    )
 
                 if response.status_code in (200, 201, 202, 204):
                     logger.info(
