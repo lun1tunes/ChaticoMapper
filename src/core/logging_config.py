@@ -158,6 +158,11 @@ def configure_logging(default_level: Optional[str] = None) -> None:
                 "level": "WARNING" if level != "DEBUG" else "INFO",
                 "propagate": False,
             },
+            "python_multipart": {
+                "handlers": ["console"],
+                "level": "WARNING",
+                "propagate": False,
+            },
         },
     }
 
