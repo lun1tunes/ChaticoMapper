@@ -177,7 +177,7 @@ async def get_current_user(
                 headers={"WWW-Authenticate": authenticate_value},
             )
 
-    user = await repo.get_by_email(token_data.username)
+    user = await repo.get_by_username(token_data.username)
     if not user:
         raise credentials_exception
 

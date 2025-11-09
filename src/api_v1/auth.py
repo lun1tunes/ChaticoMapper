@@ -53,7 +53,7 @@ async def login_for_access_token(
     access_token_expires = timedelta(minutes=settings.jwt.expire_minutes)
     access_token = create_access_token(
         data={
-            "sub": user.email,
+            "sub": user.username,
             "role": user.role,
             "scopes": scopes,
         },
@@ -65,9 +65,9 @@ async def login_for_access_token(
     if user.id:
         worker_app = await worker_app_repo.get_by_user_id(user.id)
     if not worker_app:
-        worker_app = await worker_app_repo.get_by_account_id(user.email)
+        worker_app = await worker_app_repo.get_by_account_id(user.username)
     if worker_app:
         base_url = worker_app.base_url
 
-    logger.info("Issued access token for %s", user.email)
+    logger.info("Issued access token for %s", user.username)
     return Token(access_token=access_token, token_type="bearer", base_url=base_url, scopes=scopes)

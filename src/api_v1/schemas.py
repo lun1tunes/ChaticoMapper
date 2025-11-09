@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
 from src.core.models.user import UserRole
 from src.core.utils.time import now_utc
@@ -251,7 +251,7 @@ class TokenData(BaseModel):
 
 
 class UserBase(BaseModel):
-    email: EmailStr
+    username: str = Field(..., min_length=1, max_length=255)
     full_name: Optional[str] = None
     role: UserRole = Field(default=UserRole.BASIC)
 

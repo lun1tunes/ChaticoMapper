@@ -24,4 +24,4 @@ async def read_users_me(
 async def read_users_me_items(
     current_user: Annotated[User, Depends(get_current_active_user)]
 ) -> list[dict[str, str]]:
-    return [{"item_id": "Foo", "owner": current_user.email}]
+    return [{"item_id": "Foo", "owner": current_user.username}]

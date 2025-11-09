@@ -6,9 +6,9 @@ from src.core.models.worker_app import WorkerApp
 from src.core.services.security import hash_password
 
 
-async def _create_user(session, *, email: str, password: str, role: UserRole) -> None:
+async def _create_user(session, *, username: str, password: str, role: UserRole) -> None:
     user = User(
-        email=email,
+        username=username,
         full_name="Test User",
         hashed_password=hash_password(password),
         role=role.value,
@@ -31,11 +31,11 @@ async def test_list_worker_apps_returns_empty_for_admin(client, db_session):
     await db_session.execute(delete(WorkerApp))
     await db_session.commit()
 
-    email = "admin@example.com"
+    username = "admin_user"
     password = "test-password"
-    await _create_user(db_session, email=email, password=password, role=UserRole.ADMIN)
+    await _create_user(db_session, username=username, password=password, role=UserRole.ADMIN)
 
-    token = await _get_token(client, username=email, password=password)
+    token = await _get_token(client, username=username, password=password)
 
     response = await client.get(
         "/api/v1/worker-apps",
@@ -50,11 +50,11 @@ async def test_list_worker_apps_returns_empty_for_admin(client, db_session):
 
 @pytest.mark.asyncio
 async def test_list_worker_apps_requires_admin_role(client, db_session):
-    email = "basic@example.com"
+    username = "basic_user"
     password = "test-password"
-    await _create_user(db_session, email=email, password=password, role=UserRole.BASIC)
+    await _create_user(db_session, username=username, password=password, role=UserRole.BASIC)
 
-    token = await _get_token(client, username=email, password=password)
+    token = await _get_token(client, username=username, password=password)
 
     response = await client.get(
         "/api/v1/worker-apps",

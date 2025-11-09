@@ -9,7 +9,7 @@ from src.core.services.security import hash_password
 async def test_token_includes_worker_app_base_url(client, db_session):
     password = "test-password"
     user = User(
-        email="owner@example.com",
+        username="owner_user",
         full_name="Owner User",
         hashed_password=hash_password(password),
         role=UserRole.ADMIN.value,
@@ -31,7 +31,7 @@ async def test_token_includes_worker_app_base_url(client, db_session):
 
     response = await client.post(
         "/token",
-        data={"username": user.email, "password": password},
+        data={"username": user.username, "password": password},
     )
 
     assert response.status_code == 200
