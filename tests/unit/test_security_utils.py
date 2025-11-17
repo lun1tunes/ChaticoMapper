@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timezone, timedelta
 
 from src.core.services import security
 
@@ -49,3 +50,10 @@ def test_hash_and_verify_with_pbkdf2_fallback(monkeypatch):
 def test_safe_decode_token_wraps_invalid_token():
     with pytest.raises(security.TokenDecodeError):
         security.safe_decode_token("definitely-not-a-jwt")
+
+
+def test_create_access_token_and_decode():
+    token = security.create_access_token({"sub": "alice"}, expires_delta=timedelta(minutes=1))
+    decoded = security.decode_access_token(token)
+    assert decoded["sub"] == "alice"
+    assert datetime.fromtimestamp(decoded["exp"], tz=timezone.utc) > datetime.now(timezone.utc)
