@@ -1,5 +1,6 @@
 """Redis cache service for caching worker app lookups."""
 
+import inspect
 import json
 import logging
 from typing import Any, Optional
@@ -43,11 +44,14 @@ class RedisCacheService:
 
         if self._client is None:
             try:
-                self._client = await redis_async.from_url(
+                client = redis_async.from_url(
                     self.redis_url,
                     encoding="utf-8",
                     decode_responses=True,
                 )
+                if inspect.isawaitable(client):
+                    client = await client
+                self._client = client
                 await self._client.ping()
                 logger.info("Redis connection established successfully")
             except RedisError as e:

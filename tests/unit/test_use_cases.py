@@ -166,9 +166,10 @@ async def test_process_use_case_skips_duplicate_comments(db_session, monkeypatch
     monkeypatch.setattr(use_case, "_extract_comments", lambda payload: [_valid_comment(worker, comment_id="dup-comment")])
 
     result = await use_case.execute(webhook_payload={})
-    assert result["success"] is False
+    assert result["success"] is True
     assert result["comments_processed"] == 0
-    assert result["comments_skipped"] == 1
+    assert result["comments_skipped"] == 0
+    assert result["duplicates"] == 1
     assert result["errors"] is None
     assert dummy_forward.calls == []
 

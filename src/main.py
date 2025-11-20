@@ -170,6 +170,7 @@ async def verify_webhook_signature(request: Request, call_next):
     trace_id = incoming_trace or str(uuid.uuid4())
     token = trace_id_ctx.set(trace_id)
     try:
+        request.state.trace_id = trace_id
         # Check if this is a POST request to the webhook endpoint (with or without trailing slash)
         webhook_path = "/api/v1/webhook"
         if request.method == "POST" and request.url.path.rstrip("/") == webhook_path:

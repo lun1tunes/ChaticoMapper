@@ -29,11 +29,15 @@ WORKDIR /app
 # Copy dependency files (README.md is required by Poetry build system)
 COPY pyproject.toml poetry.lock README.md ./
 
-# Create virtual environment and install dependencies only
-# Project uses package-mode=false, so we just install dependencies
-RUN python -m venv /app/.venv && \
+# Install Poetry for dependency export
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install "poetry==${POETRY_VERSION}"
+
+# Export locked dependencies and install them into the project virtualenv
+RUN poetry export --without-hashes --format=requirements.txt --output /tmp/requirements.txt && \
+    python -m venv /app/.venv && \
     /app/.venv/bin/pip install --upgrade pip setuptools wheel && \
-    /app/.venv/bin/pip install $(python -c "import tomllib; f=open('pyproject.toml','rb'); data=tomllib.load(f); print(' '.join([dep.split('[')[0] for dep in data['project']['dependencies']]))")
+    /app/.venv/bin/pip install -r /tmp/requirements.txt
 
 # ============================================================================
 # Stage 2: Runtime - Lightweight production image

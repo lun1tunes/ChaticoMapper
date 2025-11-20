@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from src.api_v1.schemas import RoutingResponse, WebhookPayload, WebhookVerification
 from src.core.config import Settings, get_settings
 from src.core.dependencies import get_process_webhook_use_case
+from src.core.logging_config import trace_id_ctx
 from src.core.use_cases.process_webhook_use_case import ProcessWebhookUseCase
 
 logger = logging.getLogger(__name__)
@@ -62,7 +63,12 @@ async def process_webhook(
     ],
 ) -> RoutingResponse:
     """Process Instagram comment webhook notifications."""
-    trace_id = request.headers.get("X-Trace-ID", "unknown")
+    trace_id = (
+        getattr(request.state, "trace_id", None)
+        or trace_id_ctx.get()
+        or request.headers.get("X-Trace-ID")
+        or "unknown"
+    )
     logger.info(
         "Received webhook | trace_id=%s | entries=%s",
         trace_id,
@@ -88,23 +94,29 @@ async def process_webhook(
             detail=f"Internal server error: {exc}",
         ) from exc
 
+    last_success = result.get("last_success") or {}
+    duplicates = result.get("duplicates", 0) or 0
+
     if result.get("success"):
         logger.info(
             "Webhook processed successfully | processed=%s | skipped=%s",
             result.get("comments_processed"),
             result.get("comments_skipped"),
         )
+        message = f"Processed {result.get('comments_processed', 0)} comment(s)"
+        if duplicates:
+            message += f" (duplicates ignored: {duplicates})"
         return RoutingResponse(
             status="success",
-            message=f"Processed {result.get('comments_processed')} comment(s)",
-            routed_to=None,
-            processing_time_ms=None,
+            message=message,
+            routed_to=last_success.get("worker_app_username"),
+            processing_time_ms=last_success.get("processing_time_ms"),
             error_details=None,
             webhook_id=trace_id,
         )
 
     errors = result.get("errors") or []
-    error_msg = "; ".join(errors) if errors else "Unknown error"
+    error_msg = "; ".join(errors) if errors else "Processing failed"
     logger.error("Webhook processing failed | errors=%s", error_msg)
     return RoutingResponse(
         status="failed",

@@ -61,9 +61,11 @@ class ProcessWebhookUseCase:
                 - comments_skipped (int): Number of comments skipped
                 - errors (list): List of error messages
         """
-        errors = []
+        errors: list[str] = []
         comments_processed = 0
         comments_skipped = 0
+        duplicates = 0
+        last_success_result: Optional[dict] = None
 
         # Extract all comments from webhook
         try:
@@ -90,7 +92,11 @@ class ProcessWebhookUseCase:
                 )
 
                 if result.get("success"):
-                    comments_processed += 1
+                    if result.get("duplicate"):
+                        duplicates += 1
+                    else:
+                        comments_processed += 1
+                        last_success_result = result
                 else:
                     comments_skipped += 1
                     if error := result.get("error"):
@@ -101,13 +107,17 @@ class ProcessWebhookUseCase:
                 comments_skipped += 1
                 errors.append(f"Unexpected error: {str(e)}")
 
-        success = comments_processed > 0 or len(comments) == 0
+        success = not errors and (
+            comments_processed > 0 or duplicates > 0 or len(comments) == 0
+        )
 
         return {
             "success": success,
             "comments_processed": comments_processed,
             "comments_skipped": comments_skipped,
+            "duplicates": duplicates,
             "errors": errors if errors else None,
+            "last_success": last_success_result,
         }
 
     async def _process_single_comment(
@@ -136,8 +146,8 @@ class ProcessWebhookUseCase:
         if await self.comment_repo.exists_by_comment_id(comment_id):
             logger.debug(f"Comment already exists: comment_id={comment_id}")
             return {
-                "success": False,
-                "reason": "duplicate",
+                "success": True,
+                "duplicate": True,
                 "comment_id": comment_id,
             }
 

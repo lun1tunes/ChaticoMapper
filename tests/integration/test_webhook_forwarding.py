@@ -193,7 +193,10 @@ async def test_webhook_success_with_valid_signature_and_forwarding(client, db_se
     )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "success"
+    resp_json = response.json()
+    assert resp_json["status"] == "success"
+    assert resp_json["routed_to"] == worker_app.owner_instagram_username
+    assert isinstance(resp_json["processing_time_ms"], int) or resp_json["processing_time_ms"] is None
     assert captured["url"] == worker_app.webhook_url
 
 
@@ -217,3 +220,27 @@ async def test_webhook_handles_forward_errors(client, db_session, monkeypatch):
     resp_json = response.json()
     assert resp_json["status"] == "failed"
     assert "Request timeout" in resp_json["error_details"]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_webhook_requests_report_success(client, db_session, monkeypatch):
+    worker_app = await _create_worker_app(db_session, account_id="acct-dup")
+    captured: Dict[str, Any] = {}
+    _patch_httpx(monkeypatch, captured, status_code=200)
+
+    payload_dict = _instagram_payload(worker_app.account_id, comment_id="dup-comment")
+    payload = json.dumps(payload_dict).encode()
+    headers = {
+        "content-type": "application/json",
+        "X-Hub-Signature-256": _sign_payload(payload),
+    }
+
+    first = await client.post("/api/v1/webhook", content=payload, headers=headers)
+    assert first.status_code == 200
+    assert first.json()["status"] == "success"
+
+    second = await client.post("/api/v1/webhook", content=payload, headers=headers)
+    assert second.status_code == 200
+    body = second.json()
+    assert body["status"] == "success"
+    assert body["error_details"] is None
