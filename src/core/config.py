@@ -132,6 +132,66 @@ class JWTSettings(BaseModel):
     )
 
 
+class YouTubeSettings(BaseModel):
+    client_id: str = Field(
+        default_factory=lambda: os.getenv("YOUTUBE_CLIENT_ID", "").strip()
+    )
+    client_secret: str = Field(
+        default_factory=lambda: os.getenv("YOUTUBE_CLIENT_SECRET", "").strip()
+    )
+    redirect_uri: str = Field(
+        default_factory=lambda: os.getenv("YOUTUBE_REDIRECT_URI", "").strip()
+    )
+    refresh_token: Optional[str] = Field(
+        default_factory=lambda: os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip() or None
+    )
+
+    @model_validator(mode="after")
+    def _validate(self) -> "YouTubeSettings":
+        missing = []
+        if not self.client_id:
+            missing.append("YOUTUBE_CLIENT_ID")
+        if not self.client_secret:
+            missing.append("YOUTUBE_CLIENT_SECRET")
+        if not self.redirect_uri:
+            missing.append("YOUTUBE_REDIRECT_URI")
+
+        if missing:
+            raise ValueError(f"Missing required YouTube OAuth envs: {', '.join(missing)}")
+        return self
+
+
+class OAuthSecuritySettings(BaseModel):
+    app_secret: str = Field(
+        default_factory=lambda: os.getenv("APP_SECRET", "").strip()
+    )
+    encryption_key: str = Field(
+        default_factory=lambda: os.getenv("OAUTH_ENCRYPTION_KEY", "").strip()
+    )
+
+    @model_validator(mode="after")
+    def _validate(self) -> "OAuthSecuritySettings":
+        errors = []
+        if not self.app_secret:
+            errors.append("APP_SECRET must be set for OAuth state signing.")
+        if not self.encryption_key:
+            errors.append("OAUTH_ENCRYPTION_KEY must be set for OAuth token encryption.")
+        else:
+            # Fernet requires a 32-byte URL-safe base64-encoded key
+            import base64
+
+            try:
+                decoded = base64.urlsafe_b64decode(self.encryption_key)
+                if len(decoded) != 32:
+                    errors.append("OAUTH_ENCRYPTION_KEY must decode to 32 bytes for Fernet.")
+            except Exception:
+                errors.append("OAUTH_ENCRYPTION_KEY must be a valid urlsafe base64 value.")
+
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
+
+
 class Settings(BaseModel):
     app: AppSettings = Field(default_factory=AppSettings)
     server: ServerSettings = Field(default_factory=ServerSettings)
@@ -140,6 +200,8 @@ class Settings(BaseModel):
     redis: RedisSettings = Field(default_factory=RedisSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     jwt: JWTSettings = Field(default_factory=JWTSettings)
+    youtube: YouTubeSettings = Field(default_factory=YouTubeSettings)
+    oauth_security: OAuthSecuritySettings = Field(default_factory=OAuthSecuritySettings)
 
     model_config = dict(extra="ignore")
 
@@ -207,6 +269,31 @@ class Settings(BaseModel):
     @property
     def instagram_verify_token(self) -> str:
         return self.instagram.verify_token
+
+    # OAuth / YouTube helpers --------------------------------------------------
+    @property
+    def youtube_client_id(self) -> str:
+        return self.youtube.client_id
+
+    @property
+    def youtube_client_secret(self) -> str:
+        return self.youtube.client_secret
+
+    @property
+    def youtube_redirect_uri(self) -> str:
+        return self.youtube.redirect_uri
+
+    @property
+    def youtube_refresh_token(self) -> Optional[str]:
+        return self.youtube.refresh_token
+
+    @property
+    def oauth_app_secret(self) -> str:
+        return self.oauth_security.app_secret
+
+    @property
+    def oauth_encryption_key(self) -> str:
+        return self.oauth_security.encryption_key
 
     @property
     def redis_enabled(self) -> bool:

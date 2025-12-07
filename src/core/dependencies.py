@@ -18,11 +18,14 @@ from src.core.config import Settings, get_settings
 from src.core.models.db_helper import db_helper
 from src.core.models.user import User, UserRole
 from src.core.repositories.instagram_comment_repository import InstagramCommentRepository
+from src.core.repositories.oauth_token_repository import OAuthTokenRepository
 from src.core.repositories.user_repository import UserRepository
 from src.core.repositories.webhook_log_repository import WebhookLogRepository
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 from src.core.services.redis_cache_service import RedisCacheService
 from src.core.services.security import TokenDecodeError, oauth2_scheme, safe_decode_token
+from src.core.services.oauth_token_service import OAuthTokenService
+from src.core.services.youtube_service import YouTubeService
 from src.core.use_cases.forward_webhook_use_case import ForwardWebhookUseCase
 from src.core.use_cases.process_webhook_use_case import ProcessWebhookUseCase
 from src.api_v1.schemas import TokenData
@@ -78,6 +81,13 @@ def get_user_repository(
 ) -> UserRepository:
     """Get UserRepository instance."""
     return UserRepository(session)
+
+
+def get_oauth_token_repository(
+    session: Annotated[AsyncSession, Depends(get_session)]
+) -> OAuthTokenRepository:
+    """Get OAuthTokenRepository instance."""
+    return OAuthTokenRepository(session)
 
 
 # ============================================================================
@@ -138,6 +148,22 @@ def get_process_webhook_use_case(
         forward_webhook_uc=forward_webhook_uc,
         redis_cache=redis_cache,
     )
+
+
+def get_oauth_token_service(
+    repo: Annotated[OAuthTokenRepository, Depends(get_oauth_token_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> OAuthTokenService:
+    """Provide OAuthTokenService with encryption."""
+    return OAuthTokenService(repo=repo, encryption_key=settings.oauth_encryption_key)
+
+
+def get_youtube_service(
+    token_service: Annotated[OAuthTokenService, Depends(get_oauth_token_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> YouTubeService:
+    """Provide YouTubeService."""
+    return YouTubeService(token_service=token_service, settings=settings)
 
 
 async def get_current_user(
