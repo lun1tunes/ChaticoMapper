@@ -33,8 +33,9 @@ COPY pyproject.toml poetry.lock README.md ./
 RUN pip install --upgrade pip setuptools wheel && \
     pip install "poetry==${POETRY_VERSION}"
 
-# Export locked dependencies and install them into the project virtualenv
-RUN poetry export --without-hashes --format=requirements.txt --output /tmp/requirements.txt && \
+# Ensure lock file matches the current pyproject and export dependencies
+RUN poetry lock --no-update && \
+    poetry export --without-hashes --format=requirements.txt --output /tmp/requirements.txt && \
     python -m venv /app/.venv && \
     /app/.venv/bin/pip install --upgrade pip setuptools wheel && \
     /app/.venv/bin/pip install -r /tmp/requirements.txt

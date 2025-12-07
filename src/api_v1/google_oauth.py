@@ -9,14 +9,24 @@ import hmac
 import logging
 import time
 from typing import Annotated, Optional
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import httpx
+from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from src.core.config import Settings, get_settings
-from src.core.dependencies import get_oauth_token_service
+from src.core.dependencies import (
+    get_current_active_user,
+    get_oauth_token_service,
+    get_user_repository,
+    get_worker_app_repository,
+)
+from src.core.models.user import User
+from src.core.repositories.worker_app_repository import WorkerAppRepository
+from src.core.repositories.user_repository import UserRepository
 from src.core.services.oauth_token_service import OAuthTokenService
 from src.core.services.youtube_service import YouTubeService
 
@@ -35,18 +45,18 @@ def _sign_state(payload: str, app_secret: str) -> str:
     return base64.urlsafe_b64encode(digest).decode("utf-8")
 
 
-def _generate_state(app_secret: str) -> str:
+def _generate_state(app_secret: str, user_id: str) -> str:
     nonce = str(uuid4())
     expires_at = int(time.time()) + STATE_TTL_SECONDS
-    payload = f"{nonce}:{expires_at}"
+    payload = f"{nonce}:{expires_at}:{user_id}"
     signature = _sign_state(payload, app_secret)
     return f"{payload}:{signature}"
 
 
-def _validate_state(state: str, app_secret: str) -> None:
+def _validate_state(state: str, app_secret: str) -> str:
     try:
-        nonce, exp_str, signature = state.split(":")
-        payload = f"{nonce}:{exp_str}"
+        nonce, exp_str, user_id, signature = state.split(":")
+        payload = f"{nonce}:{exp_str}:{user_id}"
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state parameter"
@@ -69,15 +79,20 @@ def _validate_state(state: str, app_secret: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Expired state parameter"
         )
+    return user_id
 
 
 @router.get("/authorize", response_class=RedirectResponse)
 async def authorize(
+    current_user: Annotated[User, Depends(get_current_active_user)],
     settings: Annotated[Settings, Depends(get_settings)],
     redirect_to: Optional[str] = None,
 ) -> RedirectResponse:
     """Build the Google consent screen URL and redirect the user."""
-    state = _generate_state(settings.oauth_app_secret)
+    if not current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User id missing")
+
+    state = _generate_state(settings.oauth_app_secret, str(current_user.id))
 
     params = {
         "client_id": settings.youtube_client_id,
@@ -103,6 +118,10 @@ async def callback(
     code: Annotated[str | None, Query()] = None,
     state: Annotated[str | None, Query()] = None,
     settings: Annotated[Settings, Depends(get_settings)] = None,
+    user_repo: Annotated[UserRepository, Depends(get_user_repository)] = None,
+    worker_app_repo: Annotated[
+        WorkerAppRepository, Depends(get_worker_app_repository)
+    ] = None,
     token_service: Annotated[
         OAuthTokenService, Depends(get_oauth_token_service)
     ] = None,
@@ -113,7 +132,17 @@ async def callback(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code or state"
         )
 
-    _validate_state(state, settings.oauth_app_secret)
+    user_id = _validate_state(state, settings.oauth_app_secret)
+
+    user = await user_repo.get_by_id(user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="User referenced in state not found"
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="User is inactive"
+        )
 
     token_payload = {
         "code": code,
@@ -145,6 +174,10 @@ async def callback(
     if not access_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No access token returned"
+        )
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No refresh token returned"
         )
 
     # Fetch channel id
@@ -178,9 +211,76 @@ async def callback(
         else None
     )
 
+    # Encrypt tokens for worker backend
+    fernet = Fernet(settings.oauth_encryption_key)
+    try:
+        access_token_encrypted = fernet.encrypt(access_token.encode("utf-8")).decode("utf-8")
+        refresh_token_encrypted = (
+            fernet.encrypt(refresh_token.encode("utf-8")).decode("utf-8")
+            if refresh_token
+            else None
+        )
+    except Exception as exc:
+        logger.error("Failed to encrypt tokens for worker backend: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to encrypt tokens",
+        )
+
+    worker_app = await worker_app_repo.get_by_user_id(user.id)
+    if not worker_app:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Worker app is not configured for this user",
+        )
+
+    # Use the same host/port as webhook forwarding; swap the route to oauth tokens
+    base_target = worker_app.webhook_url or worker_app.base_url
+    parsed = urlparse(base_target)
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Worker app URL is invalid",
+        )
+    worker_endpoint = f"{parsed.scheme}://{parsed.netloc}/api/v1/oauth/tokens"
+    payload = {
+        "provider": YouTubeService.PROVIDER,
+        "account_id": account_id,
+        "access_token_encrypted": access_token_encrypted,
+        "refresh_token_encrypted": refresh_token_encrypted,
+        "token_type": "Bearer",
+        "scope": scope,
+    }
+    if expires_at:
+        payload["expires_at"] = expires_at.isoformat()
+    elif expires_in:
+        payload["expires_in"] = expires_in
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            worker_resp = await client.post(worker_endpoint, json=payload)
+    except Exception as exc:
+        logger.error("Failed to send tokens to worker backend: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to notify worker backend",
+        )
+
+    if worker_resp.status_code >= 400:
+        logger.error(
+            "Worker backend rejected tokens: status=%s body=%s",
+            worker_resp.status_code,
+            worker_resp.text,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Worker backend rejected tokens",
+        )
+
     stored = await token_service.store_tokens(
         provider=YouTubeService.PROVIDER,
         account_id=account_id,
+        user_id=user.id,
         access_token=access_token,
         refresh_token=refresh_token,
         scope=scope,
@@ -194,18 +294,21 @@ async def callback(
             "account_id": stored.account_id,
             "scope": stored.scope,
             "expires_at": stored.expires_at.isoformat() if stored.expires_at else None,
+            "worker_synced": True,
         },
     )
 
 
 @router.get("/account")
 async def account_status(
-    settings: Annotated[Settings, Depends(get_settings)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
     token_service: Annotated[OAuthTokenService, Depends(get_oauth_token_service)],
     account_id: Optional[str] = None,
 ) -> dict:
     """Report whether tokens exist for the given account (or any)."""
-    token = await token_service.get_tokens(YouTubeService.PROVIDER, account_id)
+    token = await token_service.get_tokens(
+        YouTubeService.PROVIDER, user_id=current_user.id, account_id=account_id
+    )
     return {
         "connected": token is not None,
         "account_id": token.account_id if token else None,
@@ -213,6 +316,5 @@ async def account_status(
         "expires_at": (
             token.expires_at.isoformat() if token and token.expires_at else None
         ),
-        "has_refresh_token": bool(token and token.refresh_token)
-        or bool(settings.youtube_refresh_token),
+        "has_refresh_token": bool(token and token.refresh_token),
     }

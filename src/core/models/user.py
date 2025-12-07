@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.core.models.base import Base
 
 if TYPE_CHECKING:
+    from src.core.models.oauth_token import OAuthToken
     from src.core.models.worker_app import WorkerApp
 
 
@@ -50,6 +51,11 @@ class User(Base):
     worker_apps: Mapped[list["WorkerApp"]] = relationship(
         "WorkerApp",
         back_populates="user",
+    )
+    oauth_tokens: Mapped[list["OAuthToken"]] = relationship(
+        "OAuthToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

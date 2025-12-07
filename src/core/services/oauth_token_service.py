@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -15,6 +16,7 @@ from src.core.repositories.oauth_token_repository import OAuthTokenRepository
 class OAuthTokenData:
     provider: str
     account_id: str
+    user_id: str | UUID
     access_token: str
     refresh_token: Optional[str]
     scope: Optional[str]
@@ -47,6 +49,7 @@ class OAuthTokenService:
         *,
         provider: str,
         account_id: str,
+        user_id: str | UUID,
         access_token: str,
         refresh_token: Optional[str],
         scope: Optional[str],
@@ -58,6 +61,7 @@ class OAuthTokenService:
         token = await self.repo.upsert(
             provider=provider,
             account_id=account_id,
+            user_id=user_id,
             encrypted_access_token=encrypted_access,
             encrypted_refresh_token=encrypted_refresh,
             scope=scope,
@@ -67,6 +71,7 @@ class OAuthTokenService:
         return OAuthTokenData(
             provider=token.provider,
             account_id=token.account_id,
+            user_id=user_id,
             access_token=access_token,
             refresh_token=refresh_token,
             scope=token.scope,
@@ -74,9 +79,14 @@ class OAuthTokenService:
         )
 
     async def get_tokens(
-        self, provider: str, account_id: Optional[str] = None
+        self,
+        provider: str,
+        user_id: str | UUID,
+        account_id: Optional[str] = None,
     ) -> Optional[OAuthTokenData]:
-        token = await self.repo.get_latest(provider, account_id)
+        if not user_id:
+            return None
+        token = await self.repo.get_latest(provider, user_id, account_id)
         if not token:
             return None
 
@@ -88,6 +98,7 @@ class OAuthTokenService:
         return OAuthTokenData(
             provider=token.provider,
             account_id=token.account_id,
+            user_id=user_id,
             access_token=access,
             refresh_token=refresh,
             scope=token.scope,
@@ -99,6 +110,7 @@ class OAuthTokenService:
         *,
         provider: str,
         account_id: str,
+        user_id: str | UUID,
         access_token: str,
         refresh_token: Optional[str],
         expires_at: Optional[datetime],
@@ -109,6 +121,7 @@ class OAuthTokenService:
         token = await self.repo.update_access_token(
             provider=provider,
             account_id=account_id,
+            user_id=user_id,
             encrypted_access_token=encrypted_access,
             encrypted_refresh_token=encrypted_refresh,
             expires_at=expires_at,
@@ -119,9 +132,9 @@ class OAuthTokenService:
         return OAuthTokenData(
             provider=token.provider,
             account_id=token.account_id,
+            user_id=user_id,
             access_token=access_token,
             refresh_token=refresh_token,
             scope=token.scope,
             expires_at=token.expires_at,
         )
-

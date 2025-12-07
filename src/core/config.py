@@ -163,7 +163,9 @@ class YouTubeSettings(BaseModel):
 
 class OAuthSecuritySettings(BaseModel):
     app_secret: str = Field(
-        default_factory=lambda: os.getenv("APP_SECRET", "").strip()
+        default_factory=lambda: (
+            os.getenv("OAUTH_STATE_SECRET") or os.getenv("APP_SECRET") or ""
+        ).strip()
     )
     encryption_key: str = Field(
         default_factory=lambda: os.getenv("OAUTH_ENCRYPTION_KEY", "").strip()
@@ -173,7 +175,7 @@ class OAuthSecuritySettings(BaseModel):
     def _validate(self) -> "OAuthSecuritySettings":
         errors = []
         if not self.app_secret:
-            errors.append("APP_SECRET must be set for OAuth state signing.")
+            errors.append("OAUTH_STATE_SECRET (or APP_SECRET) must be set for OAuth state signing.")
         if not self.encryption_key:
             errors.append("OAUTH_ENCRYPTION_KEY must be set for OAuth token encryption.")
         else:

@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
-from uuid import uuid4
+from typing import Optional, TYPE_CHECKING
+from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, String, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.models.base import Base
+
+if TYPE_CHECKING:
+    from src.core.models.user import User
 
 
 class OAuthToken(Base):
@@ -17,7 +20,12 @@ class OAuthToken(Base):
 
     __tablename__ = "oauth_tokens"
     __table_args__ = (
-        UniqueConstraint("provider", "account_id", name="uq_oauth_provider_account"),
+        UniqueConstraint(
+            "provider",
+            "account_id",
+            "user_id",
+            name="uq_oauth_provider_account_user",
+        ),
     )
 
     id: Mapped[str] = mapped_column(
@@ -54,6 +62,16 @@ class OAuthToken(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Owner of the OAuth credentials",
+    )
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="oauth_tokens",
     )
 
     def __repr__(self) -> str:
