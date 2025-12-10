@@ -87,7 +87,12 @@ async def authorize(
     current_user: Annotated[User, Depends(get_current_active_user)],
     settings: Annotated[Settings, Depends(get_settings)],
     redirect_to: Optional[str] = None,
-) -> RedirectResponse:
+    request: Request | None = None,
+    return_url: bool = Query(
+        False,
+        description="Return JSON with consent URL instead of redirect (useful for XHR to avoid CORS)",
+    ),
+) -> JSONResponse | RedirectResponse:
     """Build the Google consent screen URL and redirect the user."""
     if not current_user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User id missing")
@@ -109,6 +114,19 @@ async def authorize(
 
     query = str(httpx.QueryParams(params))
     consent_url = f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
+
+    # When called via XHR/fetch, a cross-origin redirect to Google triggers CORS errors.
+    # Allow callers to request the URL instead so the client can navigate (window.location).
+    wants_json = return_url or (
+        request is not None
+        and (
+            request.headers.get("x-requested-with", "").lower() == "xmlhttprequest"
+            or "application/json" in request.headers.get("accept", "")
+        )
+    )
+    if wants_json:
+        return JSONResponse({"auth_url": consent_url})
+
     return RedirectResponse(consent_url)
 
 
