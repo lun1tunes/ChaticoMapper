@@ -87,7 +87,6 @@ async def authorize(
     current_user: Annotated[User, Depends(get_current_active_user)],
     settings: Annotated[Settings, Depends(get_settings)],
     redirect_to: Optional[str] = None,
-    request: Request | None = None,
     return_url: bool = Query(
         False,
         description="Return JSON with consent URL instead of redirect (useful for XHR to avoid CORS)",
@@ -115,18 +114,11 @@ async def authorize(
     query = str(httpx.QueryParams(params))
     consent_url = f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
 
-    # When called via XHR/fetch, a cross-origin redirect to Google triggers CORS errors.
-    # Allow callers to request the URL instead so the client can navigate (window.location).
-    wants_json = return_url or (
-        request is not None
-        and (
-            request.headers.get("x-requested-with", "").lower() == "xmlhttprequest"
-            or "application/json" in request.headers.get("accept", "")
-        )
-    )
-    if wants_json:
+    # If explicitly requested, return the URL so SPA can redirect client-side.
+    if return_url:
         return JSONResponse({"auth_url": consent_url})
 
+    # Default: issue a direct redirect to Google (best for full-page nav).
     return RedirectResponse(consent_url)
 
 
