@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import httpx
 from cryptography.fernet import Fernet
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from src.core.config import Settings, get_settings
@@ -82,19 +82,25 @@ def _validate_state(state: str, app_secret: str) -> str:
     return user_id
 
 
-@router.get("/authorize", response_class=RedirectResponse)
+@router.get("/authorize", response_class=Response, response_model=None)
 async def authorize(
+    request: Request,
     current_user: Annotated[User, Depends(get_current_active_user)],
     settings: Annotated[Settings, Depends(get_settings)],
-    redirect_to: Optional[str] = None,
+    redirect_to: Optional[str] = Query(default=None),
     return_url: bool = Query(
-        False,
-        description="Return JSON with consent URL instead of redirect (useful for XHR to avoid CORS)",
+        True,
+        description=(
+            "Return JSON with consent URL instead of redirect. "
+            "Default True to avoid browser following redirects in XHR."
+        ),
     ),
-) -> JSONResponse | RedirectResponse:
+) -> Response:
     """Build the Google consent screen URL and redirect the user."""
     if not current_user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User id missing")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="User id missing"
+        )
 
     state = _generate_state(settings.oauth_app_secret, str(current_user.id))
 
@@ -114,15 +120,15 @@ async def authorize(
     query = str(httpx.QueryParams(params))
     consent_url = f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
 
-    # If explicitly requested, return the URL so SPA can redirect client-side.
+    # Always return JSON when return_url is truthy (default True) to prevent CORS issues in XHR.
     if return_url:
         return JSONResponse({"auth_url": consent_url})
 
-    # Default: issue a direct redirect to Google (best for full-page nav).
+    # Fallback: direct redirect
     return RedirectResponse(consent_url)
 
 
-@router.get("/callback")
+@router.get("/callback", response_class=Response, response_model=None)
 async def callback(
     request: Request,
     code: Annotated[str | None, Query()] = None,
@@ -135,7 +141,7 @@ async def callback(
     token_service: Annotated[
         OAuthTokenService, Depends(get_oauth_token_service)
     ] = None,
-) -> JSONResponse:
+) -> Response:
     """Handle Google OAuth callback, exchange code, fetch channel id, store tokens."""
     if not code or not state:
         raise HTTPException(
@@ -147,7 +153,8 @@ async def callback(
     user = await user_repo.get_by_id(user_id)
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="User referenced in state not found"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User referenced in state not found",
         )
     if not user.is_active:
         raise HTTPException(
@@ -224,7 +231,9 @@ async def callback(
     # Encrypt tokens for worker backend
     fernet = Fernet(settings.oauth_encryption_key)
     try:
-        access_token_encrypted = fernet.encrypt(access_token.encode("utf-8")).decode("utf-8")
+        access_token_encrypted = fernet.encrypt(access_token.encode("utf-8")).decode(
+            "utf-8"
+        )
         refresh_token_encrypted = (
             fernet.encrypt(refresh_token.encode("utf-8")).decode("utf-8")
             if refresh_token
