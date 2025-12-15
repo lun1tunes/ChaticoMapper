@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import base64
+import json
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import logging
 import time
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from typing import Annotated, Optional
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -47,19 +49,29 @@ def _sign_state(payload: str, app_secret: str) -> str:
     return base64.urlsafe_b64encode(digest).decode("utf-8")
 
 
-def _generate_state(app_secret: str, user_id: str) -> str:
+def _generate_state(app_secret: str, user_id: str, redirect_to: Optional[str] = None) -> str:
     nonce = str(uuid4())
     expires_at = int(time.time()) + STATE_TTL_SECONDS
-    payload = f"{nonce}:{expires_at}:{user_id}"
+    redirect_b64 = (
+        base64.urlsafe_b64encode(redirect_to.encode("utf-8")).decode("utf-8").rstrip("=")
+        if redirect_to
+        else ""
+    )
+    payload = f"{nonce}:{expires_at}:{user_id}:{redirect_b64}"
     signature = _sign_state(payload, app_secret)
     return f"{payload}:{signature}"
 
 
-def _validate_state(state: str, app_secret: str) -> str:
-    try:
-        nonce, exp_str, user_id, signature = state.split(":")
+def _validate_state(state: str, app_secret: str) -> tuple[str, Optional[str]]:
+    parts = state.split(":")
+    if len(parts) == 5:
+        nonce, exp_str, user_id, redirect_b64, signature = parts
+        payload = f"{nonce}:{exp_str}:{user_id}:{redirect_b64}"
+    elif len(parts) == 4:
+        nonce, exp_str, user_id, signature = parts
+        redirect_b64 = ""
         payload = f"{nonce}:{exp_str}:{user_id}"
-    except ValueError:
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid state parameter"
         )
@@ -81,7 +93,24 @@ def _validate_state(state: str, app_secret: str) -> str:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Expired state parameter"
         )
-    return user_id
+
+    redirect_to: Optional[str] = None
+    if redirect_b64:
+        padded = redirect_b64 + "=" * (-len(redirect_b64) % 4)
+        try:
+            redirect_to = base64.urlsafe_b64decode(padded).decode("utf-8")
+        except Exception:
+            redirect_to = None
+
+    return user_id, redirect_to
+
+
+def _with_query(url: str, extra: dict[str, str]) -> str:
+    parsed = urlparse(url)
+    current_qs = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    current_qs.update(extra)
+    new_query = urlencode(current_qs, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
 
 
 @router.get("/authorize", response_class=Response, response_model=None)
@@ -104,7 +133,7 @@ async def authorize(
             status_code=status.HTTP_400_BAD_REQUEST, detail="User id missing"
         )
 
-    state = _generate_state(settings.oauth_app_secret, str(current_user.id))
+    state = _generate_state(settings.oauth_app_secret, str(current_user.id), redirect_to)
 
     params = {
         "client_id": settings.youtube_client_id,
@@ -151,7 +180,7 @@ async def callback(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code or state"
         )
 
-    user_id = _validate_state(state, settings.oauth_app_secret)
+    user_id, redirect_from_state = _validate_state(state, settings.oauth_app_secret)
 
     user = await user_repo.get_by_id(user_id)
     if not user:
@@ -249,56 +278,6 @@ async def callback(
             detail="Unable to encrypt tokens",
         )
 
-    worker_app = await worker_app_repo.get_by_user_id(user.id)
-    if not worker_app:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Worker app is not configured for this user",
-        )
-
-    # Use the same host/port as webhook forwarding; swap the route to oauth tokens
-    base_target = worker_app.webhook_url or worker_app.base_url
-    parsed = urlparse(base_target)
-    if not parsed.scheme or not parsed.netloc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Worker app URL is invalid",
-        )
-    worker_endpoint = f"{parsed.scheme}://{parsed.netloc}/api/v1/oauth/tokens"
-    payload = {
-        "provider": YouTubeService.PROVIDER,
-        "account_id": account_id,
-        "access_token_encrypted": access_token_encrypted,
-        "refresh_token_encrypted": refresh_token_encrypted,
-        "token_type": "Bearer",
-        "scope": scope,
-    }
-    if expires_at:
-        payload["expires_at"] = expires_at.isoformat()
-    elif expires_in:
-        payload["expires_in"] = expires_in
-
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            worker_resp = await client.post(worker_endpoint, json=payload)
-    except Exception as exc:
-        logger.error("Failed to send tokens to worker backend: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to notify worker backend",
-        )
-
-    if worker_resp.status_code >= 400:
-        logger.error(
-            "Worker backend rejected tokens: status=%s body=%s",
-            worker_resp.status_code,
-            worker_resp.text,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Worker backend rejected tokens",
-        )
-
     stored = await token_service.store_tokens(
         provider=YouTubeService.PROVIDER,
         account_id=account_id,
@@ -310,6 +289,73 @@ async def callback(
     )
     await session.commit()
 
+    worker_synced = False
+    worker_app = await worker_app_repo.get_by_user_id(user.id)
+    if worker_app:
+        # Use the same host/port as webhook forwarding; swap the route to oauth tokens
+        base_target = worker_app.webhook_url or worker_app.base_url
+        parsed = urlparse(base_target)
+        if parsed.scheme and parsed.netloc:
+            worker_endpoint = f"{parsed.scheme}://{parsed.netloc}/api/v1/oauth/tokens"
+            payload = {
+                "provider": YouTubeService.PROVIDER,
+                "account_id": account_id,
+                "access_token_encrypted": access_token_encrypted,
+                "refresh_token_encrypted": refresh_token_encrypted,
+                "token_type": "Bearer",
+                "scope": scope,
+            }
+            if expires_at:
+                payload["expires_at"] = expires_at.isoformat()
+            elif expires_in:
+                payload["expires_in"] = expires_in
+
+            try:
+                headers = {
+                    "Content-Type": "application/json",
+                    "X-Internal-Secret": settings.app_secret,
+                }
+                async with httpx.AsyncClient(timeout=20.0) as client:
+                    worker_resp = await client.post(
+                        worker_endpoint,
+                        json=payload,
+                        headers=headers,
+                    )
+                if worker_resp.status_code >= 400:
+                    logger.error(
+                        "Worker backend rejected tokens: status=%s body=%s endpoint=%s",
+                        worker_resp.status_code,
+                        worker_resp.text,
+                        worker_endpoint,
+                    )
+                else:
+                    worker_synced = True
+            except Exception as exc:
+                logger.error("Failed to send tokens to worker backend: %s", exc)
+        else:
+            logger.error("Worker app URL is invalid: %s", base_target)
+    else:
+        logger.warning("Worker app is not configured for user_id=%s; skipping worker sync", user.id)
+
+    redirect_target = (
+        redirect_from_state
+        or request.query_params.get("redirect_to")
+        or "https://lunitunestmb.com/chatico/settings"
+    )
+    # Append status info for the frontend to consume
+    if redirect_target:
+        try:
+            redirect_url = _with_query(
+                redirect_target,
+                {
+                    "youtube_status": "connected",
+                    "youtube_worker_synced": str(worker_synced).lower(),
+                },
+            )
+            return RedirectResponse(redirect_url)
+        except Exception as exc:
+            logger.warning("Failed to build redirect url %s: %s", redirect_target, exc)
+
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
@@ -317,7 +363,7 @@ async def callback(
             "account_id": stored.account_id,
             "scope": stored.scope,
             "expires_at": stored.expires_at.isoformat() if stored.expires_at else None,
-            "worker_synced": True,
+            "worker_synced": worker_synced,
         },
     )
 

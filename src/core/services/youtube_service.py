@@ -26,7 +26,8 @@ class QuotaExceeded(Exception):
 class YouTubeService:
     """Wrapper that manages OAuth tokens and exposes channel-aware helpers."""
 
-    PROVIDER = "google"
+    # Align provider id with worker expectation
+    PROVIDER = "youtube"
     TOKEN_URL = "https://oauth2.googleapis.com/token"
     CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 
