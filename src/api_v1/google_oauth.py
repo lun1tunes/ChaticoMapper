@@ -16,11 +16,13 @@ import httpx
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings, get_settings
 from src.core.dependencies import (
     get_current_active_user,
     get_oauth_token_service,
+    get_session,
     get_user_repository,
     get_worker_app_repository,
 )
@@ -141,6 +143,7 @@ async def callback(
     token_service: Annotated[
         OAuthTokenService, Depends(get_oauth_token_service)
     ] = None,
+    session: Annotated[AsyncSession, Depends(get_session)] = None,
 ) -> Response:
     """Handle Google OAuth callback, exchange code, fetch channel id, store tokens."""
     if not code or not state:
@@ -305,6 +308,7 @@ async def callback(
         scope=scope,
         expires_at=expires_at,
     )
+    await session.commit()
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
