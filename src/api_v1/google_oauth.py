@@ -32,6 +32,7 @@ from src.core.models.user import User
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 from src.core.repositories.user_repository import UserRepository
 from src.core.services.oauth_token_service import OAuthTokenService
+from src.core.services.security import create_internal_service_token
 from src.core.services.youtube_service import YouTubeService
 
 logger = logging.getLogger(__name__)
@@ -311,9 +312,10 @@ async def callback(
                 payload["expires_in"] = expires_in
 
             try:
+                internal_jwt = create_internal_service_token()
                 headers = {
                     "Content-Type": "application/json",
-                    "X-Internal-Secret": settings.app_secret,
+                    "Authorization": f"Bearer {internal_jwt}",
                 }
                 async with httpx.AsyncClient(timeout=20.0) as client:
                     worker_resp = await client.post(

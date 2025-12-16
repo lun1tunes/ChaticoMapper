@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -135,6 +136,29 @@ def create_access_token(data: dict[str, Any], expires_delta: Optional[timedelta]
     )
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.security.secret_key, algorithm=settings.jwt.algorithm)
+
+
+def create_internal_service_token(
+    audience: str = "instagram-worker",
+    expires_in_seconds: int = 300,
+) -> str:
+    """
+    Short-lived JWT for inter-service calls (mapper -> worker).
+
+    Uses the shared app secret so both services can validate without exposing user JWT keys.
+    """
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    payload = {
+        "iss": "chatico-mapper",
+        "sub": "chatico-mapper",
+        "aud": audience,
+        "iat": now,
+        "exp": now + timedelta(seconds=expires_in_seconds),
+        "jti": str(uuid.uuid4()),
+        "scope": "internal",
+    }
+    return jwt.encode(payload, settings.app_secret, algorithm="HS256")
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
