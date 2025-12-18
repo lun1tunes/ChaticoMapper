@@ -219,6 +219,7 @@ async def callback(
         access_token = token_data.get("access_token")
         refresh_token = token_data.get("refresh_token")
         expires_in = token_data.get("expires_in")
+        refresh_token_expires_in = token_data.get("refresh_token_expires_in")
         scope = token_data.get("scope")
 
     if not access_token:
@@ -260,6 +261,14 @@ async def callback(
         if expires_in
         else None
     )
+    refresh_token_expires_at = None
+    if refresh_token_expires_in:
+        try:
+            refresh_token_expires_at = datetime.now(timezone.utc) + timedelta(
+                seconds=int(refresh_token_expires_in)
+            )
+        except (TypeError, ValueError):
+            refresh_token_expires_at = None
 
     # Encrypt tokens for worker backend
     fernet = Fernet(settings.oauth_encryption_key)
@@ -286,7 +295,8 @@ async def callback(
         access_token=access_token,
         refresh_token=refresh_token,
         scope=scope,
-        expires_at=expires_at,
+        access_token_expires_at=expires_at,
+        refresh_token_expires_at=refresh_token_expires_at,
     )
     await session.commit()
 
@@ -307,9 +317,13 @@ async def callback(
                 "scope": scope,
             }
             if expires_at:
-                payload["expires_at"] = expires_at.isoformat()
-            elif expires_in:
-                payload["expires_in"] = expires_in
+                payload["access_token_expires_at"] = expires_at.isoformat()
+            if expires_in:
+                payload["access_token_expires_in"] = expires_in
+            if refresh_token_expires_at:
+                payload["refresh_token_expires_at"] = refresh_token_expires_at.isoformat()
+            if refresh_token_expires_in:
+                payload["refresh_token_expires_in"] = refresh_token_expires_in
 
             try:
                 internal_jwt = create_internal_service_token()
@@ -352,6 +366,9 @@ async def callback(
                 {
                     "youtube_status": "connected",
                     "youtube_worker_synced": str(worker_synced).lower(),
+                    "youtube_access_expires_at": stored.access_token_expires_at.isoformat()
+                    if stored.access_token_expires_at
+                    else "",
                 },
             )
             return RedirectResponse(redirect_url)
@@ -364,7 +381,20 @@ async def callback(
             "status": "connected",
             "account_id": stored.account_id,
             "scope": stored.scope,
-            "expires_at": stored.expires_at.isoformat() if stored.expires_at else None,
+            # Explicitly surface which token expiry this is (access token)
+            "access_token_expires_at": stored.access_token_expires_at.isoformat()
+            if stored.access_token_expires_at
+            else None,
+            "access_token_expires_in": expires_in,
+            # Refresh tokens are long-lived; no expiry unless Google returns one (rare)
+            "refresh_token_expires_at": stored.refresh_token_expires_at.isoformat()
+            if stored.refresh_token_expires_at
+            else None,
+            # Legacy aliases for backward compatibility
+            "expires_at": stored.access_token_expires_at.isoformat()
+            if stored.access_token_expires_at
+            else None,
+            "expires_in": expires_in,
             "worker_synced": worker_synced,
         },
     )
@@ -380,12 +410,33 @@ async def account_status(
     token = await token_service.get_tokens(
         YouTubeService.PROVIDER, user_id=current_user.id, account_id=account_id
     )
+    access_expires_at = token.access_token_expires_at if token else None
+    # Normalize to aware UTC for comparison
+    if access_expires_at and access_expires_at.tzinfo is None:
+        access_expires_at = access_expires_at.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    access_token_valid = bool(access_expires_at is None or access_expires_at > now)
     return {
-        "connected": token is not None,
+        # Treat as connected only when we have a token AND it is not expired
+        "connected": bool(token) and access_token_valid,
         "account_id": token.account_id if token else None,
         "scope": token.scope if token else None,
+        "access_token_expires_at": (
+            access_expires_at.isoformat()
+            if access_expires_at
+            else None
+        ),
+        "refresh_token_expires_at": (
+            token.refresh_token_expires_at.isoformat()
+            if token and token.refresh_token_expires_at
+            else None
+        ),
+        # Legacy alias (access token expiry)
         "expires_at": (
-            token.expires_at.isoformat() if token and token.expires_at else None
+            access_expires_at.isoformat()
+            if access_expires_at
+            else None
         ),
         "has_refresh_token": bool(token and token.refresh_token),
+        "access_token_valid": access_token_valid,
     }

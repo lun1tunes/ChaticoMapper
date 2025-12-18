@@ -20,7 +20,8 @@ class OAuthTokenData:
     access_token: str
     refresh_token: Optional[str]
     scope: Optional[str]
-    expires_at: Optional[datetime]
+    access_token_expires_at: Optional[datetime]
+    refresh_token_expires_at: Optional[datetime]
 
 
 class OAuthTokenService:
@@ -53,7 +54,8 @@ class OAuthTokenService:
         access_token: str,
         refresh_token: Optional[str],
         scope: Optional[str],
-        expires_at: Optional[datetime],
+        access_token_expires_at: Optional[datetime],
+        refresh_token_expires_at: Optional[datetime] = None,
     ) -> OAuthTokenData:
         encrypted_access = self._encrypt(access_token)
         encrypted_refresh = self._encrypt(refresh_token)
@@ -65,7 +67,8 @@ class OAuthTokenService:
             encrypted_access_token=encrypted_access,
             encrypted_refresh_token=encrypted_refresh,
             scope=scope,
-            expires_at=expires_at,
+            access_token_expires_at=access_token_expires_at,
+            refresh_token_expires_at=refresh_token_expires_at,
         )
 
         return OAuthTokenData(
@@ -75,7 +78,8 @@ class OAuthTokenService:
             access_token=access_token,
             refresh_token=refresh_token,
             scope=token.scope,
-            expires_at=token.expires_at,
+            access_token_expires_at=token.access_token_expires_at,
+            refresh_token_expires_at=token.refresh_token_expires_at,
         )
 
     async def get_tokens(
@@ -102,7 +106,8 @@ class OAuthTokenService:
             access_token=access,
             refresh_token=refresh,
             scope=token.scope,
-            expires_at=token.expires_at,
+            access_token_expires_at=token.access_token_expires_at,
+            refresh_token_expires_at=token.refresh_token_expires_at,
         )
 
     async def update_access_token(
@@ -113,7 +118,7 @@ class OAuthTokenService:
         user_id: str | UUID,
         access_token: str,
         refresh_token: Optional[str],
-        expires_at: Optional[datetime],
+        access_token_expires_at: Optional[datetime],
     ) -> Optional[OAuthTokenData]:
         encrypted_access = self._encrypt(access_token)
         encrypted_refresh = self._encrypt(refresh_token)
@@ -124,7 +129,7 @@ class OAuthTokenService:
             user_id=user_id,
             encrypted_access_token=encrypted_access,
             encrypted_refresh_token=encrypted_refresh,
-            expires_at=expires_at,
+            access_token_expires_at=access_token_expires_at,
         )
         if not token:
             return None
@@ -136,5 +141,6 @@ class OAuthTokenService:
             access_token=access_token,
             refresh_token=refresh_token,
             scope=token.scope,
-            expires_at=token.expires_at,
+            access_token_expires_at=token.access_token_expires_at,
+            refresh_token_expires_at=token.refresh_token_expires_at,
         )

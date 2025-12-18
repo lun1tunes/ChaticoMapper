@@ -51,8 +51,13 @@ class OAuthToken(Base):
     scope: Mapped[str | None] = mapped_column(
         String(1024), nullable=True, comment="Granted scopes"
     )
-    expires_at: Mapped[Optional[datetime]] = mapped_column(
+    access_token_expires_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="Access token expiry time"
+    )
+    refresh_token_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Refresh token expiry time (if provided by Google)",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

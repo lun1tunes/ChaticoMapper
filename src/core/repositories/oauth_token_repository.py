@@ -40,14 +40,16 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
         encrypted_access_token: str,
         encrypted_refresh_token: Optional[str],
         scope: Optional[str],
-        expires_at: Optional[datetime],
+        access_token_expires_at: Optional[datetime],
+        refresh_token_expires_at: Optional[datetime],
     ) -> OAuthToken:
         existing = await self._get_by_provider_account_user(provider, account_id, user_id)
         if existing:
             existing.encrypted_access_token = encrypted_access_token
             existing.encrypted_refresh_token = encrypted_refresh_token
             existing.scope = scope
-            existing.expires_at = expires_at
+            existing.access_token_expires_at = access_token_expires_at
+            existing.refresh_token_expires_at = refresh_token_expires_at
             await self.session.flush()
             return existing
 
@@ -58,7 +60,8 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
             encrypted_access_token=encrypted_access_token,
             encrypted_refresh_token=encrypted_refresh_token,
             scope=scope,
-            expires_at=expires_at,
+            access_token_expires_at=access_token_expires_at,
+            refresh_token_expires_at=refresh_token_expires_at,
         )
         self.session.add(token)
         await self.session.flush()
@@ -72,7 +75,7 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
         user_id: UUID | str,
         encrypted_access_token: str,
         encrypted_refresh_token: Optional[str],
-        expires_at: Optional[datetime],
+        access_token_expires_at: Optional[datetime],
     ) -> Optional[OAuthToken]:
         token = await self._get_by_provider_account_user(provider, account_id, user_id)
         if not token:
@@ -80,7 +83,7 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
 
         token.encrypted_access_token = encrypted_access_token
         token.encrypted_refresh_token = encrypted_refresh_token
-        token.expires_at = expires_at
+        token.access_token_expires_at = access_token_expires_at
         await self.session.flush()
         return token
 

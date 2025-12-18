@@ -54,9 +54,18 @@ class YouTubeService:
         if not token:
             raise MissingYouTubeAuth("User has not connected YouTube.")
 
-        if token.expires_at and token.expires_at <= datetime.now(timezone.utc) + timedelta(seconds=30):
+        access_expires_at = token.access_token_expires_at
+        if access_expires_at and access_expires_at.tzinfo is None:
+            access_expires_at = access_expires_at.replace(tzinfo=timezone.utc)
+
+        if access_expires_at and access_expires_at <= datetime.now(timezone.utc) + timedelta(seconds=30):
             if token.refresh_token:
-                refreshed = await self._refresh_token(user_id, token.refresh_token, token.account_id)
+                refreshed = await self._refresh_token(
+                    user_id,
+                    token.refresh_token,
+                    token.account_id,
+                    token.refresh_token_expires_at,
+                )
                 if refreshed:
                     return refreshed
             raise MissingYouTubeAuth("Stored YouTube token expired and no refresh token available.")
@@ -64,7 +73,11 @@ class YouTubeService:
         return token
 
     async def _refresh_token(
-        self, user_id: str | UUID, refresh_token: Optional[str], account_id: Optional[str]
+        self,
+        user_id: str | UUID,
+        refresh_token: Optional[str],
+        account_id: Optional[str],
+        refresh_token_expires_at: Optional[datetime],
     ) -> Optional[OAuthTokenData]:
         if not refresh_token:
             return None
@@ -86,6 +99,7 @@ class YouTubeService:
             access_token = data.get("access_token")
             new_refresh = data.get("refresh_token") or refresh_token
             expires_in = data.get("expires_in")
+            refresh_expires_in = data.get("refresh_token_expires_in")
             scope = data.get("scope")
 
             expires_at = (
@@ -93,6 +107,14 @@ class YouTubeService:
                 if expires_in
                 else None
             )
+            refresh_expires_at = refresh_token_expires_at
+            if refresh_expires_in:
+                try:
+                    refresh_expires_at = datetime.now(timezone.utc) + timedelta(
+                        seconds=int(refresh_expires_in)
+                    )
+                except (TypeError, ValueError):
+                    refresh_expires_at = refresh_token_expires_at
 
             # Need account id to store; fetch if missing
             target_account_id = account_id or await self._fetch_channel_id(access_token)
@@ -107,7 +129,8 @@ class YouTubeService:
                 access_token=access_token,
                 refresh_token=new_refresh,
                 scope=scope,
-                expires_at=expires_at,
+                access_token_expires_at=expires_at,
+                refresh_token_expires_at=refresh_expires_at,
             )
 
     async def _fetch_channel_id(self, access_token: str) -> Optional[str]:

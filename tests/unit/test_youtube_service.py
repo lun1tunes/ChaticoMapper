@@ -3,13 +3,28 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from src.core.models.user import User
 from src.core.repositories.oauth_token_repository import OAuthTokenRepository
 from src.core.services.oauth_token_service import OAuthTokenService
 from src.core.services.youtube_service import MissingYouTubeAuth, YouTubeService
+from uuid import uuid4
 
 
 def _key() -> str:
     return base64.urlsafe_b64encode(b"1" * 32).decode()
+
+
+async def _create_user(db_session) -> User:
+    user = User(
+        username=f"yt_user_{uuid4().hex}",
+        full_name="YT User",
+        hashed_password="test_hash",
+        role="basic",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
 
 
 class _FakeHttpClient:
@@ -61,13 +76,25 @@ class _StubSettings:
 async def test_refresh_with_env_token_when_missing(db_session, monkeypatch):
     repo = OAuthTokenRepository(db_session)
     token_service = OAuthTokenService(repo, _key())
-    settings = _StubSettings(refresh_token="env-refresh")
+    user = await _create_user(db_session)
+    settings = _StubSettings(refresh_token=None)
+
+    expired = datetime.now(timezone.utc) - timedelta(hours=1)
+    await token_service.store_tokens(
+        provider="youtube",
+        account_id="channel-1",
+        user_id=user.id,
+        access_token="old-access",
+        refresh_token="stored-refresh",
+        scope="scope1",
+        access_token_expires_at=expired,
+    )
 
     svc = YouTubeService(token_service, settings=settings, http_client=_FakeHttpClient)
-    token = await svc.get_or_refresh_credentials()
+    token = await svc.get_or_refresh_credentials(user.id)
     assert token.access_token == "new-access"
-    assert token.refresh_token == "env-refresh"
-    assert token.account_id == "channel-id"
+    assert token.refresh_token == "stored-refresh"
+    assert token.account_id == "channel-1"
 
 
 @pytest.mark.asyncio
@@ -78,5 +105,5 @@ async def test_missing_tokens_without_refresh_raises(db_session, monkeypatch):
 
     svc = YouTubeService(token_service, settings=settings, http_client=_FakeHttpClient)
     with pytest.raises(MissingYouTubeAuth):
-        await svc.get_or_refresh_credentials()
-
+        user = await _create_user(db_session)
+        await svc.get_or_refresh_credentials(user.id)
