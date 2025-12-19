@@ -411,9 +411,12 @@ async def account_status(
         YouTubeService.PROVIDER, user_id=current_user.id, account_id=account_id
     )
     access_expires_at = token.access_token_expires_at if token else None
+    refresh_expires_at = token.refresh_token_expires_at if token else None
     # Normalize to aware UTC for comparison
     if access_expires_at and access_expires_at.tzinfo is None:
         access_expires_at = access_expires_at.replace(tzinfo=timezone.utc)
+    if refresh_expires_at and refresh_expires_at.tzinfo is None:
+        refresh_expires_at = refresh_expires_at.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
     access_token_valid = bool(access_expires_at is None or access_expires_at > now)
     return {
@@ -427,8 +430,8 @@ async def account_status(
             else None
         ),
         "refresh_token_expires_at": (
-            token.refresh_token_expires_at.isoformat()
-            if token and token.refresh_token_expires_at
+            refresh_expires_at.isoformat()
+            if refresh_expires_at
             else None
         ),
         # Legacy alias (access token expiry)

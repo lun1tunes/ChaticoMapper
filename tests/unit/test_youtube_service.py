@@ -6,6 +6,7 @@ import pytest
 from src.core.models.user import User
 from src.core.repositories.oauth_token_repository import OAuthTokenRepository
 from src.core.services.oauth_token_service import OAuthTokenService
+from src.core.services.oauth_token_service import OAuthTokenData
 from src.core.services.youtube_service import MissingYouTubeAuth, YouTubeService
 from uuid import uuid4
 
@@ -72,6 +73,28 @@ class _StubSettings:
         self.youtube_refresh_token = refresh_token
 
 
+class _StubTokenService:
+    def __init__(self, token):
+        self.token = token
+        self.stored_kwargs = None
+
+    async def get_tokens(self, provider, user_id, account_id=None):
+        return self.token
+
+    async def store_tokens(self, **kwargs):
+        self.stored_kwargs = kwargs
+        return self.token.__class__(
+            provider=kwargs["provider"],
+            account_id=kwargs["account_id"],
+            user_id=kwargs["user_id"],
+            access_token=kwargs["access_token"],
+            refresh_token=kwargs["refresh_token"],
+            scope=kwargs.get("scope"),
+            access_token_expires_at=kwargs.get("access_token_expires_at"),
+            refresh_token_expires_at=kwargs.get("refresh_token_expires_at"),
+        )
+
+
 @pytest.mark.asyncio
 async def test_refresh_with_env_token_when_missing(db_session, monkeypatch):
     repo = OAuthTokenRepository(db_session)
@@ -107,3 +130,44 @@ async def test_missing_tokens_without_refresh_raises(db_session, monkeypatch):
     with pytest.raises(MissingYouTubeAuth):
         user = await _create_user(db_session)
         await svc.get_or_refresh_credentials(user.id)
+
+
+@pytest.mark.asyncio
+async def test_refresh_updates_refresh_token_expiry(monkeypatch):
+    """Ensure refresh_token_expires_in is applied on refresh."""
+    expired = datetime.now(timezone.utc) - timedelta(hours=1)
+    token_data = OAuthTokenData(
+        provider="youtube",
+        account_id="channel-1",
+        user_id=uuid4(),
+        access_token="old",
+        refresh_token="stored-refresh",
+        scope="scope1",
+        access_token_expires_at=expired,
+        refresh_token_expires_at=None,
+    )
+    settings = _StubSettings(refresh_token=None)
+
+    class _RefreshHttpClient(_FakeHttpClient):
+        async def post(self, url: str, data=None):
+            return _Response(
+                200,
+                {
+                    "access_token": "new-access",
+                    "refresh_token": data.get("refresh_token"),
+                    "expires_in": 3600,
+                    "refresh_token_expires_in": 7200,
+                    "scope": "scope1",
+                },
+            )
+
+    token_service = _StubTokenService(token_data)
+    svc = YouTubeService(token_service, settings=settings, http_client=_RefreshHttpClient)
+
+    refreshed = await svc.get_or_refresh_credentials(user_id=token_data.user_id, account_id="channel-1")
+    assert refreshed.refresh_token == "stored-refresh"
+    stored_args = token_service.stored_kwargs
+    assert stored_args is not None
+    assert stored_args["refresh_token_expires_at"] is not None
+    delta = stored_args["refresh_token_expires_at"] - datetime.now(timezone.utc)
+    assert timedelta(minutes=100) < delta < timedelta(minutes=140)
