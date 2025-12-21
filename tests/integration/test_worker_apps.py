@@ -192,6 +192,48 @@ async def test_get_worker_app_by_account_handles_missing(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_get_worker_app_by_account_success(client, db_session):
+    admin = await _create_user(db_session, username="lookup-admin2", password="secret", role=UserRole.ADMIN)
+    token = await _get_token(client, username=admin.username, password="secret")
+    worker = await _create_worker_app_record(db_session, account_id="acct-success", username="owner-success")
+
+    response = await client.get(
+        f"/api/v1/worker-apps/account/{worker.account_id}",
+        headers=_auth_headers(token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["account_id"] == worker.account_id
+
+
+@pytest.mark.asyncio
+async def test_update_worker_app_not_found_returns_404(client, db_session):
+    admin = await _create_user(db_session, username="update-missing", password="secret", role=UserRole.ADMIN)
+    token = await _get_token(client, username=admin.username, password="secret")
+
+    response = await client.put(
+        "/api/v1/worker-apps/00000000-0000-0000-0000-000000000000",
+        json={
+            "owner_instagram_username": "who",
+        },
+        headers=_auth_headers(token),
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_worker_app_not_found_returns_404(client, db_session):
+    admin = await _create_user(db_session, username="delete-missing", password="secret", role=UserRole.ADMIN)
+    token = await _get_token(client, username=admin.username, password="secret")
+
+    response = await client.delete(
+        "/api/v1/worker-apps/00000000-0000-0000-0000-000000000000",
+        headers=_auth_headers(token),
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_non_admin_cannot_create_worker_app(client, db_session):
     user = await _create_user(db_session, username="basic", password="secret", role=UserRole.BASIC)
     token = await _get_token(client, username=user.username, password="secret")

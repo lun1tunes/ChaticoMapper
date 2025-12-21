@@ -57,6 +57,8 @@ async def test_token_includes_worker_app_base_url(client, db_session):
     payload = response.json()
     assert payload["base_url"] == worker_app.base_url
     assert "access_token" in payload
+    # Admin scope should be present for admin users
+    assert "admin" in payload["scopes"]
 
 
 @pytest.mark.asyncio
