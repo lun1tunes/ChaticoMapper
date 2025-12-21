@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.models.oauth_token import OAuthToken
@@ -98,3 +98,20 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
             )
         )
         return result.scalar_one_or_none()
+
+    async def delete_for_user(
+        self,
+        *,
+        provider: str,
+        user_id: UUID | str,
+        account_id: Optional[str] = None,
+    ) -> int:
+        stmt = delete(OAuthToken).where(
+            OAuthToken.provider == provider,
+            OAuthToken.user_id == user_id,
+        )
+        if account_id:
+            stmt = stmt.where(OAuthToken.account_id == account_id)
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return result.rowcount or 0

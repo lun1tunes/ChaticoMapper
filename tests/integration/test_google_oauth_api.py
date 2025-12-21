@@ -166,6 +166,7 @@ async def test_account_status_marks_expired_token_as_disconnected(client, db_ses
         user,
         account_id="channel-expired",
         expires_delta=timedelta(minutes=-5),
+        refresh_expires_delta=timedelta(minutes=-5),
     )
 
     with _override_active_user(user):
@@ -175,6 +176,7 @@ async def test_account_status_marks_expired_token_as_disconnected(client, db_ses
     payload = response.json()
     assert payload["connected"] is False
     assert payload["access_token_valid"] is False
+    assert payload["refresh_token_valid"] is False
     assert payload["access_token_expires_at"] == access_expires_at.isoformat()
     assert payload["expires_at"] == access_expires_at.isoformat()
 
@@ -514,3 +516,76 @@ async def test_callback_json_fallback_when_redirect_build_fails(client, db_sessi
     payload = response.json()
     assert payload["status"] == "connected"
     assert payload["account_id"] == "channel-json"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.api
+async def test_disconnect_removes_tokens_and_notifies_worker(client, db_session, monkeypatch):
+    user = await _create_user(db_session)
+    access_expires_at, _ = await _store_token(
+        db_session,
+        user,
+        account_id="channel-remove",
+        expires_delta=timedelta(hours=1),
+    )
+    # Create worker app so notify is attempted
+    from src.core.models.worker_app import WorkerApp
+    worker_app = WorkerApp(
+        account_id="channel-remove",
+        owner_instagram_username="owner-remove",
+        base_url="https://worker-remove.example/api",
+        webhook_url="https://worker-remove.example/hook",
+        user_id=user.id,
+    )
+    db_session.add(worker_app)
+    await db_session.commit()
+
+    captured = {}
+
+    class DeleteClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def delete(self, url, json=None, headers=None, **kwargs):
+            captured["url"] = url
+            captured["json"] = json
+            captured["headers"] = headers
+            return DummyResponse(200, {})
+
+    monkeypatch.setattr("src.api_v1.google_oauth.httpx.AsyncClient", DeleteClient)
+
+    with _override_active_user(user):
+        response = await client.delete("/api/v1/auth/google/account")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "disconnected"
+    assert payload["account_id"] == "channel-remove"
+    assert payload["worker_synced"] is True
+    assert "oauth/tokens" in captured["url"]
+    assert captured["json"] == {"provider": "youtube", "account_id": "channel-remove"}
+
+    # Token should be removed
+    service = OAuthTokenService(OAuthTokenRepository(db_session), get_settings().oauth_encryption_key)
+    remaining = await service.get_tokens(YouTubeService.PROVIDER, user_id=user.id)
+    assert remaining is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.api
+async def test_disconnect_missing_tokens_returns_404(client, db_session):
+    user = await _create_user(db_session)
+
+    with _override_active_user(user):
+        response = await client.delete("/api/v1/auth/google/account")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No YouTube tokens found"

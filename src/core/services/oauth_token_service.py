@@ -144,3 +144,17 @@ class OAuthTokenService:
             access_token_expires_at=token.access_token_expires_at,
             refresh_token_expires_at=token.refresh_token_expires_at,
         )
+
+    async def delete_tokens(
+        self,
+        *,
+        provider: str,
+        user_id: str | UUID,
+        account_id: Optional[str] = None,
+    ) -> int:
+        """Delete stored tokens for the user/provider (optionally scoped to account)."""
+        return await self.repo.delete_for_user(
+            provider=provider,
+            user_id=user_id,
+            account_id=account_id,
+        )

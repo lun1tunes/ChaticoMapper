@@ -400,6 +400,72 @@ async def callback(
     )
 
 
+@router.delete("/account")
+async def disconnect_account(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    token_service: Annotated[OAuthTokenService, Depends(get_oauth_token_service)],
+    worker_app_repo: Annotated[
+        WorkerAppRepository, Depends(get_worker_app_repository)
+    ],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    account_id: Optional[str] = None,
+) -> dict:
+    """
+    Remove YouTube credentials for the current user and notify worker backend.
+    """
+    token = await token_service.get_tokens(
+        YouTubeService.PROVIDER, user_id=current_user.id, account_id=account_id
+    )
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No YouTube tokens found"
+        )
+
+    account_id = token.account_id
+    deleted = await token_service.delete_tokens(
+        provider=YouTubeService.PROVIDER, user_id=current_user.id, account_id=account_id
+    )
+    await session.commit()
+
+    worker_synced = False
+    worker_app = await worker_app_repo.get_by_user_id(current_user.id)
+    if worker_app:
+        base_target = worker_app.webhook_url or worker_app.base_url
+        parsed = urlparse(base_target)
+        if parsed.scheme and parsed.netloc:
+            worker_endpoint = f"{parsed.scheme}://{parsed.netloc}/api/v1/oauth/tokens"
+            payload = {"provider": YouTubeService.PROVIDER, "account_id": account_id}
+            try:
+                internal_jwt = create_internal_service_token()
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {internal_jwt}",
+                }
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.delete(worker_endpoint, json=payload, headers=headers)
+                if resp.status_code < 400:
+                    worker_synced = True
+                else:
+                    logger.error(
+                        "Worker backend rejected delete: status=%s body=%s endpoint=%s",
+                        resp.status_code,
+                        resp.text,
+                        worker_endpoint,
+                    )
+            except Exception as exc:  # pragma: no cover - network guard rail
+                logger.error("Failed to notify worker backend about disconnect: %s", exc)
+        else:
+            logger.error("Worker app URL is invalid: %s", base_target)
+    else:
+        logger.info("Worker app not configured; skipping worker token revoke.")
+
+    return {
+        "status": "disconnected" if deleted else "not_found",
+        "account_id": account_id,
+        "worker_synced": worker_synced,
+    }
+
+
 @router.get("/account")
 async def account_status(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -419,9 +485,15 @@ async def account_status(
         refresh_expires_at = refresh_expires_at.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
     access_token_valid = bool(access_expires_at is None or access_expires_at > now)
+    refresh_token_valid = bool(
+        token
+        and token.refresh_token
+        and (refresh_expires_at is None or refresh_expires_at > now)
+    )
+    connected = bool(token) and (access_token_valid or refresh_token_valid)
     return {
-        # Treat as connected only when we have a token AND it is not expired
-        "connected": bool(token) and access_token_valid,
+        # Connected when at least one credential (access/refresh) is still valid
+        "connected": connected,
         "account_id": token.account_id if token else None,
         "scope": token.scope if token else None,
         "access_token_expires_at": (
@@ -442,4 +514,7 @@ async def account_status(
         ),
         "has_refresh_token": bool(token and token.refresh_token),
         "access_token_valid": access_token_valid,
+        "refresh_token_valid": refresh_token_valid,
+        # Signal that we can refresh immediately without re-consent
+        "needs_refresh": bool(token) and refresh_token_valid and not access_token_valid,
     }
