@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from src.api_v1.auth import router as auth_router
 from src.api_v1.google_oauth import router as google_oauth_router
+from src.api_v1.instagram_oauth import router as instagram_oauth_router
 from src.api_v1.users import router as users_router
 from src.api_v1.webhook import router as webhook_router
 from src.api_v1.worker_apps import router as worker_apps_router
@@ -108,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(webhook_router, prefix="/api/v1")
     app.include_router(worker_apps_router, prefix="/api/v1")
     app.include_router(google_oauth_router, prefix="/api/v1")
+    app.include_router(instagram_oauth_router, prefix="/api/v1")
     app.include_router(auth_router)
     app.include_router(users_router, prefix="/api/v1")
 

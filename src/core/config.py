@@ -79,6 +79,9 @@ class DatabaseSettings(BaseModel):
 
 
 class InstagramSettings(BaseModel):
+    app_id: str = Field(
+        default_factory=lambda: os.getenv("INSTAGRAM_APP_ID", "").strip()
+    )
     app_secret: str = Field(
         default_factory=lambda: os.getenv("INSTAGRAM_APP_SECRET", "").strip()
     )
@@ -86,6 +89,18 @@ class InstagramSettings(BaseModel):
         default_factory=lambda: os.getenv(
             "INSTAGRAM_API_BASE_URL", "https://graph.instagram.com/v23.0"
         ).strip()
+    )
+    auth_url: str = Field(
+        default_factory=lambda: (
+            os.getenv("INSTAGRAM_AUTH_URL", "https://www.instagram.com/oauth/authorize")
+        ).strip()
+        or "https://www.instagram.com/oauth/authorize"
+    )
+    redirect_uri: str = Field(
+        default_factory=lambda: os.getenv("INSTAGRAM_REDIRECT_URI", "").strip()
+    )
+    auth_scopes: Optional[str] = Field(
+        default_factory=lambda: os.getenv("INSTAGRAM_AUTH_SCOPES", "").strip() or None
     )
     verify_token: str = Field(
         default_factory=lambda: os.getenv("WEBHOOK_INIT_VERIFY_TOKEN", "").strip()

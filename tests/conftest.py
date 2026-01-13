@@ -35,6 +35,13 @@ os.environ["JWT_SECRET_KEY"] = "test_secret_key"
 os.environ["INSTAGRAM_APP_SECRET"] = "test_app_secret"
 os.environ["INSTAGRAM_API_BASE_URL"] = "https://graph.instagram.com/v23.0"
 os.environ["WEBHOOK_INIT_VERIFY_TOKEN"] = "test_verify_token"
+os.environ["INSTAGRAM_APP_ID"] = "test_instagram_app_id"
+os.environ["INSTAGRAM_REDIRECT_URI"] = "http://testserver/api/v1/auth/instagram/callback"
+os.environ["INSTAGRAM_AUTH_URL"] = "https://www.instagram.com/oauth/authorize"
+os.environ["INSTAGRAM_AUTH_SCOPES"] = (
+    "instagram_business_basic,instagram_business_content_publish,"
+    "instagram_business_manage_messages,instagram_business_manage_comments"
+)
 os.environ["HOST"] = "0.0.0.0"
 os.environ["PORT"] = "8100"
 os.environ["LOG_LEVEL"] = "DEBUG"
