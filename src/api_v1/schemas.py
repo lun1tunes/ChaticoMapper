@@ -147,16 +147,9 @@ class RoutingResponse(BaseModel):
 
 class WorkerAppCreate(BaseModel):
     """Worker app creation schema."""
-
-    account_id: str = Field(
-        ..., description="Instagram account ID", min_length=1, max_length=255
-    )
-    owner_instagram_username: str = Field(
-        ..., description="Instagram username of the owner", min_length=1, max_length=255
-    )
     base_url: AnyHttpUrl = Field(..., description="Base URL for HTTP requests")
-    user_id: UUID | None = Field(
-        None, description="Associated application user ID (optional)"
+    user_id: UUID = Field(
+        ..., description="Associated application user ID"
     )
     webhook_url: AnyHttpUrl | None = Field(
         None, description="Direct webhook endpoint URL for forwarding"
@@ -165,13 +158,9 @@ class WorkerAppCreate(BaseModel):
 
 class WorkerAppUpdate(BaseModel):
     """Worker app update schema."""
-
-    owner_instagram_username: Optional[str] = Field(
-        None, description="Instagram username of the owner", min_length=1, max_length=255
-    )
     base_url: Optional[AnyHttpUrl] = Field(None, description="Base URL for HTTP requests")
     user_id: UUID | None = Field(
-        None, description="Associated application user ID (optional)"
+        None, description="Associated application user ID"
     )
     webhook_url: Optional[AnyHttpUrl] = Field(
         None, description="Direct webhook endpoint URL for forwarding"
@@ -182,10 +171,6 @@ class WorkerAppResponse(BaseModel):
     """Worker app response schema."""
 
     id: UUID = Field(..., description="Worker app ID")
-    account_id: str = Field(..., description="Instagram account ID")
-    owner_instagram_username: str = Field(
-        ..., description="Instagram username of the owner"
-    )
     base_url: str = Field(..., description="Base URL for HTTP requests")
     user_id: UUID | None = Field(None, description="Associated application user ID")
     webhook_url: str = Field(..., description="Webhook endpoint URL for forwarding")

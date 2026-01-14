@@ -17,6 +17,8 @@ class OAuthTokenData:
     provider: str
     account_id: str
     user_id: str | UUID
+    instagram_user_id: Optional[str]
+    username: Optional[str]
     access_token: str
     refresh_token: Optional[str]
     scope: Optional[str]
@@ -51,6 +53,8 @@ class OAuthTokenService:
         provider: str,
         account_id: str,
         user_id: str | UUID,
+        instagram_user_id: Optional[str] = None,
+        username: Optional[str] = None,
         access_token: str,
         refresh_token: Optional[str],
         scope: Optional[str],
@@ -64,6 +68,8 @@ class OAuthTokenService:
             provider=provider,
             account_id=account_id,
             user_id=user_id,
+            instagram_user_id=instagram_user_id,
+            username=username,
             encrypted_access_token=encrypted_access,
             encrypted_refresh_token=encrypted_refresh,
             scope=scope,
@@ -75,6 +81,8 @@ class OAuthTokenService:
             provider=token.provider,
             account_id=token.account_id,
             user_id=user_id,
+            instagram_user_id=token.instagram_user_id,
+            username=token.username,
             access_token=access_token,
             refresh_token=refresh_token,
             scope=token.scope,
@@ -103,6 +111,8 @@ class OAuthTokenService:
             provider=token.provider,
             account_id=token.account_id,
             user_id=user_id,
+            instagram_user_id=token.instagram_user_id,
+            username=token.username,
             access_token=access,
             refresh_token=refresh,
             scope=token.scope,
@@ -138,6 +148,8 @@ class OAuthTokenService:
             provider=token.provider,
             account_id=token.account_id,
             user_id=user_id,
+            instagram_user_id=token.instagram_user_id,
+            username=token.username,
             access_token=access_token,
             refresh_token=refresh_token,
             scope=token.scope,

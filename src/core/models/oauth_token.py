@@ -42,6 +42,16 @@ class OAuthToken(Base):
         index=True,
         comment="External account identifier (e.g., channel id)",
     )
+    instagram_user_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Instagram user id from OAuth (app-scoped)",
+    )
+    username: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="External account username (e.g., Instagram username)",
+    )
     encrypted_access_token: Mapped[str] = mapped_column(
         String(2048), nullable=False, comment="Encrypted access token"
     )

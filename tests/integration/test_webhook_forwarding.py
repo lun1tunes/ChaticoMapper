@@ -4,16 +4,19 @@ import json
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict
+from uuid import uuid4
 
 import httpx
 import pytest
 
+from src.core.config import get_settings
+from src.core.models.user import User
 from src.core.models.worker_app import WorkerApp
+from src.core.repositories.oauth_token_repository import OAuthTokenRepository
+from src.core.services.oauth_token_service import OAuthTokenService
 
 
 def _instagram_payload(account_id: str, *, comment_id: str | None = None) -> dict:
-    from uuid import uuid4
-
     comment_identifier = comment_id or f"comment-{uuid4()}"
     return {
         "object": "instagram",
@@ -43,17 +46,48 @@ def _sign_payload(body: bytes) -> str:
     return f"sha256={digest}"
 
 
-async def _create_worker_app(db_session, *, account_id: str) -> WorkerApp:
+async def _create_user(db_session) -> User:
+    user = User(
+        username=f"webhook-user-{uuid4()}",
+        full_name="Webhook User",
+        hashed_password="hashed",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+async def _create_worker_app(db_session, *, user_id, name: str) -> WorkerApp:
     worker_app = WorkerApp(
-        account_id=account_id,
-        owner_instagram_username=f"{account_id}_owner",
-        base_url=f"https://{account_id}.example/base",
-        webhook_url=f"https://{account_id}.example/webhook",
+        base_url=f"https://{name}.example/base",
+        webhook_url=f"https://{name}.example/webhook",
+        user_id=user_id,
     )
     db_session.add(worker_app)
     await db_session.commit()
     await db_session.refresh(worker_app)
     return worker_app
+
+
+async def _store_token(db_session, *, user: User, account_id: str, username: str) -> None:
+    service = OAuthTokenService(
+        OAuthTokenRepository(db_session),
+        get_settings().oauth_encryption_key,
+    )
+    await service.store_tokens(
+        provider="instagram",
+        account_id=account_id,
+        user_id=user.id,
+        instagram_user_id="ig-scoped",
+        username=username,
+        access_token="access-token",
+        refresh_token=None,
+        scope="instagram_business_basic",
+        access_token_expires_at=None,
+        refresh_token_expires_at=None,
+    )
+    await db_session.commit()
 
 
 def _patch_httpx(monkeypatch, capture: dict[str, Any], *, status_code: int = 200, text: str = "", exception: Exception | None = None):
@@ -145,11 +179,14 @@ async def test_webhook_returns_failure_when_worker_missing(client):
 async def test_forwarding_keeps_original_headers(client, db_session, monkeypatch):
     monkeypatch.setenv("DEVELOPMENT_MODE", "true")
 
-    worker_app = await _create_worker_app(db_session, account_id="acct-123")
+    account_id = "acct-123"
+    user = await _create_user(db_session)
+    worker_app = await _create_worker_app(db_session, user_id=user.id, name=account_id)
+    await _store_token(db_session, user=user, account_id=account_id, username="acct-123-owner")
     captured: Dict[str, Any] = {}
     _patch_httpx(monkeypatch, captured)
 
-    payload = _instagram_payload(worker_app.account_id)
+    payload = _instagram_payload(account_id)
     json_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
     headers = {
         "content-type": "application/json",
@@ -178,11 +215,14 @@ async def test_forwarding_keeps_original_headers(client, db_session, monkeypatch
 
 @pytest.mark.asyncio
 async def test_webhook_success_with_valid_signature_and_forwarding(client, db_session, monkeypatch):
-    worker_app = await _create_worker_app(db_session, account_id="acct-signed")
+    account_id = "acct-signed"
+    user = await _create_user(db_session)
+    worker_app = await _create_worker_app(db_session, user_id=user.id, name=account_id)
+    await _store_token(db_session, user=user, account_id=account_id, username="acct-signed-owner")
     captured: Dict[str, Any] = {}
     _patch_httpx(monkeypatch, captured, status_code=200)
 
-    payload = json.dumps(_instagram_payload(worker_app.account_id)).encode()
+    payload = json.dumps(_instagram_payload(account_id)).encode()
     response = await client.post(
         "/api/v1/webhook",
         content=payload,
@@ -195,18 +235,21 @@ async def test_webhook_success_with_valid_signature_and_forwarding(client, db_se
     assert response.status_code == 200
     resp_json = response.json()
     assert resp_json["status"] == "success"
-    assert resp_json["routed_to"] == worker_app.owner_instagram_username
+    assert resp_json["routed_to"] == "acct-signed-owner"
     assert isinstance(resp_json["processing_time_ms"], int) or resp_json["processing_time_ms"] is None
     assert captured["url"] == worker_app.webhook_url
 
 
 @pytest.mark.asyncio
 async def test_webhook_handles_forward_errors(client, db_session, monkeypatch):
-    worker_app = await _create_worker_app(db_session, account_id="acct-error")
+    account_id = "acct-error"
+    user = await _create_user(db_session)
+    worker_app = await _create_worker_app(db_session, user_id=user.id, name=account_id)
+    await _store_token(db_session, user=user, account_id=account_id, username="acct-error-owner")
     captured: Dict[str, Any] = {}
     _patch_httpx(monkeypatch, captured, exception=httpx.TimeoutException("timeout"))
 
-    payload = json.dumps(_instagram_payload(worker_app.account_id)).encode()
+    payload = json.dumps(_instagram_payload(account_id)).encode()
     response = await client.post(
         "/api/v1/webhook",
         content=payload,
@@ -224,11 +267,14 @@ async def test_webhook_handles_forward_errors(client, db_session, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_duplicate_webhook_requests_report_success(client, db_session, monkeypatch):
-    worker_app = await _create_worker_app(db_session, account_id="acct-dup")
+    account_id = "acct-dup"
+    user = await _create_user(db_session)
+    worker_app = await _create_worker_app(db_session, user_id=user.id, name=account_id)
+    await _store_token(db_session, user=user, account_id=account_id, username="acct-dup-owner")
     captured: Dict[str, Any] = {}
     _patch_httpx(monkeypatch, captured, status_code=200)
 
-    payload_dict = _instagram_payload(worker_app.account_id, comment_id="dup-comment")
+    payload_dict = _instagram_payload(account_id, comment_id="dup-comment")
     payload = json.dumps(payload_dict).encode()
     headers = {
         "content-type": "application/json",

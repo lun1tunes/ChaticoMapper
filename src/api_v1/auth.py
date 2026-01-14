@@ -64,8 +64,6 @@ async def login_for_access_token(
     worker_app = None
     if user.id:
         worker_app = await worker_app_repo.get_by_user_id(user.id)
-    if not worker_app:
-        worker_app = await worker_app_repo.get_by_account_id(user.username)
     if worker_app:
         base_url = worker_app.base_url
 

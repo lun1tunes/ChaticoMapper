@@ -3,10 +3,14 @@ import httpx
 from sqlalchemy import delete
 from uuid import uuid4
 
+from src.core.config import get_settings
 from src.core.models.instagram_comment import InstagramComment
+from src.core.models.user import User
 from src.core.models.webhook_log import WebhookLog
 from src.core.models.worker_app import WorkerApp
+from src.core.repositories.oauth_token_repository import OAuthTokenRepository
 from src.core.repositories.webhook_log_repository import WebhookLogRepository
+from src.core.services.oauth_token_service import OAuthTokenService
 from src.core.use_cases.forward_webhook_use_case import ForwardWebhookUseCase
 from src.core.use_cases.process_webhook_use_case import ProcessWebhookUseCase
 
@@ -22,19 +26,21 @@ class _DummyForwardWebhookUseCase:
 
 
 class _FakeRedisCacheHit:
-    def __init__(self, worker: WorkerApp):
+    def __init__(self, worker: WorkerApp, account_id: str, username: str):
         self.worker = worker
+        self.account_id = account_id
+        self.username = username
         self.set_calls: list[tuple[str, dict]] = []
 
     async def get_worker_app(self, account_id: str):
-        if account_id == self.worker.account_id:
+        if account_id == self.account_id:
             return {
                 "id": str(self.worker.id),
-                "account_id": self.worker.account_id,
-                "owner_instagram_username": self.worker.owner_instagram_username,
+                "account_id": account_id,
+                "username": self.username,
                 "base_url": self.worker.base_url,
                 "webhook_url": self.worker.webhook_url,
-                "user_id": None,
+                "user_id": str(self.worker.user_id) if self.worker.user_id else None,
             }
         return None
 
@@ -60,12 +66,12 @@ async def _truncate_comments(session):
     await session.commit()
 
 
-def _valid_comment(worker: WorkerApp, *, comment_id: str | None = None) -> dict:
+def _valid_comment(account_id: str, *, comment_id: str | None = None) -> dict:
     comment_identifier = comment_id or f"comment-{uuid4()}"
     return {
         "comment_id": comment_identifier,
         "media_id": "media-1",
-        "account_id": worker.account_id,
+        "account_id": account_id,
         "user_id": "user-123",
         "username": "tester",
         "text": "hello",
@@ -75,17 +81,48 @@ def _valid_comment(worker: WorkerApp, *, comment_id: str | None = None) -> dict:
     }
 
 
-async def _create_worker_app(db_session, account_id: str = "acct-process") -> WorkerApp:
+async def _create_user(db_session) -> User:
+    user = User(
+        username=f"usecase-user-{uuid4()}",
+        full_name="Use Case User",
+        hashed_password="hashed",
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+async def _create_worker_app(db_session, user_id=None) -> WorkerApp:
     worker = WorkerApp(
-        account_id=account_id,
-        owner_instagram_username="process-owner",
         base_url="https://worker.example",
         webhook_url="https://worker.example/hook",
+        user_id=user_id,
     )
     db_session.add(worker)
     await db_session.commit()
     await db_session.refresh(worker)
     return worker
+
+
+async def _store_token(db_session, *, user: User, account_id: str, username: str | None = None) -> None:
+    service = OAuthTokenService(
+        OAuthTokenRepository(db_session),
+        get_settings().oauth_encryption_key,
+    )
+    await service.store_tokens(
+        provider="instagram",
+        account_id=account_id,
+        user_id=user.id,
+        instagram_user_id="ig-scoped",
+        username=username,
+        access_token="access-token",
+        refresh_token=None,
+        scope="instagram_business_basic",
+        access_token_expires_at=None,
+        refresh_token_expires_at=None,
+    )
+    await db_session.commit()
 
 
 # ============================================================================
@@ -143,13 +180,16 @@ async def test_process_use_case_missing_account_id_returns_error(db_session, mon
 @pytest.mark.asyncio
 async def test_process_use_case_skips_duplicate_comments(db_session, monkeypatch):
     await _truncate_comments(db_session)
-    worker = await _create_worker_app(db_session, account_id="acct-duplicate")
+    user = await _create_user(db_session)
+    account_id = "acct-duplicate"
+    worker = await _create_worker_app(db_session, user_id=user.id)
+    await _store_token(db_session, user=user, account_id=account_id, username="process-owner")
 
     # Seed existing comment
     existing = InstagramComment(
         comment_id="dup-comment",
         media_id="media-dup",
-        owner_id=worker.account_id,
+        owner_id=account_id,
         user_id="user-dup",
         username="tester",
         text="First comment",
@@ -163,7 +203,11 @@ async def test_process_use_case_skips_duplicate_comments(db_session, monkeypatch
     dummy_forward = _DummyForwardWebhookUseCase()
     use_case = ProcessWebhookUseCase(db_session, dummy_forward, redis_cache=None)
 
-    monkeypatch.setattr(use_case, "_extract_comments", lambda payload: [_valid_comment(worker, comment_id="dup-comment")])
+    monkeypatch.setattr(
+        use_case,
+        "_extract_comments",
+        lambda payload: [_valid_comment(account_id, comment_id="dup-comment")],
+    )
 
     result = await use_case.execute(webhook_payload={})
     assert result["success"] is True
@@ -177,17 +221,23 @@ async def test_process_use_case_skips_duplicate_comments(db_session, monkeypatch
 @pytest.mark.asyncio
 async def test_process_use_case_uses_redis_cache_hit(db_session, monkeypatch):
     await _truncate_comments(db_session)
-    worker = await _create_worker_app(db_session, account_id="acct-cache-hit")
-    redis_cache = _FakeRedisCacheHit(worker)
+    user = await _create_user(db_session)
+    account_id = "acct-cache-hit"
+    worker = await _create_worker_app(db_session, user_id=user.id)
+    redis_cache = _FakeRedisCacheHit(worker, account_id, "cached-owner")
     dummy_forward = _DummyForwardWebhookUseCase()
 
     use_case = ProcessWebhookUseCase(db_session, dummy_forward, redis_cache=redis_cache)
 
-    async def _fail_get_by_account_id(account_id: str):
+    async def _fail_token_lookup(_provider: str, _account_id: str):
         raise AssertionError("Should not query database when cache hits")
 
-    monkeypatch.setattr(use_case.worker_app_repo, "get_by_account_id", _fail_get_by_account_id)
-    monkeypatch.setattr(use_case, "_extract_comments", lambda payload: [_valid_comment(worker, comment_id="cache-hit")])
+    monkeypatch.setattr(use_case.oauth_token_repo, "get_by_provider_account_id", _fail_token_lookup)
+    monkeypatch.setattr(
+        use_case,
+        "_extract_comments",
+        lambda payload: [_valid_comment(account_id, comment_id="cache-hit")],
+    )
 
     result = await use_case.execute(webhook_payload={})
     assert result["success"] is True
@@ -198,32 +248,47 @@ async def test_process_use_case_uses_redis_cache_hit(db_session, monkeypatch):
 @pytest.mark.asyncio
 async def test_process_use_case_populates_cache_on_miss(db_session, monkeypatch):
     await _truncate_comments(db_session)
-    worker = await _create_worker_app(db_session, account_id="acct-cache-miss")
+    user = await _create_user(db_session)
+    account_id = "acct-cache-miss"
+    worker = await _create_worker_app(db_session, user_id=user.id)
+    await _store_token(db_session, user=user, account_id=account_id, username="cache-miss-owner")
     redis_cache = _FakeRedisCacheMiss()
     dummy_forward = _DummyForwardWebhookUseCase()
 
     use_case = ProcessWebhookUseCase(db_session, dummy_forward, redis_cache=redis_cache)
-    monkeypatch.setattr(use_case, "_extract_comments", lambda payload: [_valid_comment(worker, comment_id="cache-miss")])
+    monkeypatch.setattr(
+        use_case,
+        "_extract_comments",
+        lambda payload: [_valid_comment(account_id, comment_id="cache-miss")],
+    )
 
     result = await use_case.execute(webhook_payload={})
     assert result["success"] is True
     assert len(redis_cache.set_calls) == 1
     cache_account_id, payload = redis_cache.set_calls[0]
-    assert cache_account_id == worker.account_id
+    assert cache_account_id == account_id
     assert payload["id"] == str(worker.id)
+    assert payload["username"] == "cache-miss-owner"
 
 
 @pytest.mark.asyncio
 async def test_process_use_case_rolls_back_and_continues_on_store_failure(db_session, monkeypatch):
     await _truncate_comments(db_session)
-    worker = await _create_worker_app(db_session, account_id="acct-rollback")
+    user = await _create_user(db_session)
+    account_id = "acct-rollback"
+    worker = await _create_worker_app(db_session, user_id=user.id)
+    await _store_token(db_session, user=user, account_id=account_id, username="rollback-owner")
     dummy_forward = _DummyForwardWebhookUseCase()
     use_case = ProcessWebhookUseCase(db_session, dummy_forward, redis_cache=None)
 
     async def failing_store(_comment_data):
         raise RuntimeError("db failure")
 
-    monkeypatch.setattr(use_case, "_extract_comments", lambda payload: [_valid_comment(worker, comment_id="store-failure")])
+    monkeypatch.setattr(
+        use_case,
+        "_extract_comments",
+        lambda payload: [_valid_comment(account_id, comment_id="store-failure")],
+    )
     monkeypatch.setattr(use_case, "_store_comment", failing_store)
 
     from unittest.mock import AsyncMock
@@ -240,7 +305,10 @@ async def test_process_use_case_rolls_back_and_continues_on_store_failure(db_ses
 @pytest.mark.asyncio
 async def test_process_use_case_handles_forward_failure(db_session, monkeypatch):
     await _truncate_comments(db_session)
-    worker = await _create_worker_app(db_session, account_id="acct-forward-fail")
+    user = await _create_user(db_session)
+    account_id = "acct-forward-fail"
+    worker = await _create_worker_app(db_session, user_id=user.id)
+    await _store_token(db_session, user=user, account_id=account_id, username="forward-owner")
     dummy_forward = _DummyForwardWebhookUseCase(
         result={
             "success": False,
@@ -249,7 +317,11 @@ async def test_process_use_case_handles_forward_failure(db_session, monkeypatch)
     )
     use_case = ProcessWebhookUseCase(db_session, dummy_forward, redis_cache=None)
 
-    monkeypatch.setattr(use_case, "_extract_comments", lambda payload: [_valid_comment(worker, comment_id="forward-failure")])
+    monkeypatch.setattr(
+        use_case,
+        "_extract_comments",
+        lambda payload: [_valid_comment(account_id, comment_id="forward-failure")],
+    )
 
     result = await use_case.execute(webhook_payload={})
     assert result["success"] is False
@@ -295,15 +367,16 @@ async def test_forward_use_case_success_logs_entry(db_session, monkeypatch):
     await db_session.execute(delete(WebhookLog))
     await db_session.commit()
 
-    worker = await _create_worker_app(db_session, account_id="acct-forward-success")
+    account_id = "acct-forward-success"
+    worker = await _create_worker_app(db_session)
     _stub_httpx_client(monkeypatch, response_status=200)
 
     use_case = ForwardWebhookUseCase(db_session)
-    result = await use_case.execute(worker_app=worker, webhook_payload={}, account_id=worker.account_id)
+    result = await use_case.execute(worker_app=worker, webhook_payload={}, account_id=account_id)
     assert result["success"] is True
 
     repo = WebhookLogRepository(db_session)
-    logs = await repo.get_by_account_id(worker.account_id)
+    logs = await repo.get_by_account_id(account_id)
     assert len(logs) == 1
     assert logs[0].status == "success"
 
@@ -313,16 +386,17 @@ async def test_forward_use_case_http_error_logged_as_failure(db_session, monkeyp
     await db_session.execute(delete(WebhookLog))
     await db_session.commit()
 
-    worker = await _create_worker_app(db_session, account_id="acct-forward-error")
+    account_id = "acct-forward-error"
+    worker = await _create_worker_app(db_session)
     _stub_httpx_client(monkeypatch, response_status=500, response_text="boom")
 
     use_case = ForwardWebhookUseCase(db_session)
-    result = await use_case.execute(worker_app=worker, webhook_payload={}, account_id=worker.account_id)
+    result = await use_case.execute(worker_app=worker, webhook_payload={}, account_id=account_id)
     assert result["success"] is False
     assert result["error"] == "Worker app returned 500"
 
     repo = WebhookLogRepository(db_session)
-    logs = await repo.get_by_account_id(worker.account_id)
+    logs = await repo.get_by_account_id(account_id)
     assert len(logs) == 1
     assert logs[0].status == "failed"
     assert logs[0].error_message == "Worker app returned 500"
@@ -333,16 +407,17 @@ async def test_forward_use_case_handles_timeout(db_session, monkeypatch):
     await db_session.execute(delete(WebhookLog))
     await db_session.commit()
 
-    worker = await _create_worker_app(db_session, account_id="acct-forward-timeout")
+    account_id = "acct-forward-timeout"
+    worker = await _create_worker_app(db_session)
     _stub_httpx_client(monkeypatch, exception=httpx.TimeoutException("timeout"))
 
     use_case = ForwardWebhookUseCase(db_session)
-    result = await use_case.execute(worker_app=worker, webhook_payload={}, account_id=worker.account_id)
+    result = await use_case.execute(worker_app=worker, webhook_payload={}, account_id=account_id)
     assert result["success"] is False
     assert result["error"] == "Request timeout"
 
     repo = WebhookLogRepository(db_session)
-    logs = await repo.get_by_account_id(worker.account_id)
+    logs = await repo.get_by_account_id(account_id)
     assert len(logs) == 1
     assert logs[0].status == "failed"
     assert logs[0].error_message == "Request timeout"
@@ -350,7 +425,8 @@ async def test_forward_use_case_handles_timeout(db_session, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_forward_use_case_filters_headers(db_session, monkeypatch):
-    worker = await _create_worker_app(db_session, account_id="acct-forward-headers")
+    account_id = "acct-forward-headers"
+    worker = await _create_worker_app(db_session)
     capture: dict = {}
     _stub_httpx_client(monkeypatch, response_status=200, capture=capture)
 
@@ -359,7 +435,7 @@ async def test_forward_use_case_filters_headers(db_session, monkeypatch):
     result = await use_case.execute(
         worker_app=worker,
         webhook_payload={"entry": []},
-        account_id=worker.account_id,
+        account_id=account_id,
         original_headers={
             "Content-Type": "application/json",
             "Host": "instagram.com",

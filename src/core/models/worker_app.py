@@ -20,18 +20,6 @@ class WorkerApp(Base):
     __tablename__ = "worker_apps"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    account_id: Mapped[str] = mapped_column(
-        String(255),
-        unique=True,
-        index=True,
-        nullable=False,
-        comment="Instagram account ID of the business owner",
-    )
-    owner_instagram_username: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        comment="Instagram username of the account owner",
-    )
     base_url: Mapped[str] = mapped_column(
         String(500),
         nullable=False,
@@ -70,6 +58,6 @@ class WorkerApp(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<WorkerApp(id={self.id}, account_id={self.account_id}, "
-            f"base_url={self.base_url}, webhook_url={self.webhook_url}, user_id={self.user_id})>"
+            f"<WorkerApp(id={self.id}, base_url={self.base_url}, "
+            f"webhook_url={self.webhook_url}, user_id={self.user_id})>"
         )

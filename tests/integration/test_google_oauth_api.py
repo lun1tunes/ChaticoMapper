@@ -98,9 +98,6 @@ def _override_user_and_worker(user: User, worker_app=None):
         async def get_by_user_id(self, user_id):
             return worker_app
 
-        async def get_by_account_id(self, account_id):
-            return worker_app if worker_app and worker_app.account_id == account_id else None
-
     app.dependency_overrides[get_user_repository] = lambda: _StubUserRepo()
     app.dependency_overrides[get_worker_app_repository] = lambda: _StubWorkerRepo()
     try:
@@ -272,8 +269,6 @@ async def test_callback_exchanges_tokens_and_syncs_worker(client, db_session, mo
 
     worker_app_repo = WorkerAppRepository(db_session)
     worker_app = WorkerApp(
-        account_id="acct-sync",
-        owner_instagram_username="owner_sync",
         base_url="https://worker.example/api",
         webhook_url="https://worker.example/hook",
         user_id=user.id,
@@ -532,8 +527,6 @@ async def test_disconnect_removes_tokens_and_notifies_worker(client, db_session,
     # Create worker app so notify is attempted
     from src.core.models.worker_app import WorkerApp
     worker_app = WorkerApp(
-        account_id="channel-remove",
-        owner_instagram_username="owner-remove",
         base_url="https://worker-remove.example/api",
         webhook_url="https://worker-remove.example/hook",
         user_id=user.id,

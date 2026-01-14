@@ -155,8 +155,6 @@ async def test_callback_exchanges_tokens_and_syncs_worker(client, db_session, mo
     from src.core.models.worker_app import WorkerApp
 
     worker_app = WorkerApp(
-        account_id="ig-acc",
-        owner_instagram_username="owner-ig",
         base_url="https://worker.example/api",
         webhook_url="https://worker.example/hook",
         user_id=user.id,
@@ -181,7 +179,7 @@ async def test_callback_exchanges_tokens_and_syncs_worker(client, db_session, mo
                     200,
                     {
                         "access_token": "short-token",
-                        "user_id": "ig-user-123",
+                        "user_id": "ig-scoped-123",
                         "permissions": "instagram_business_basic,instagram_business_manage_comments",
                     },
                 )
@@ -195,6 +193,15 @@ async def test_callback_exchanges_tokens_and_syncs_worker(client, db_session, mo
                 return DummyResponse(
                     200,
                     {"access_token": "long-token", "expires_in": 3600, "token_type": "bearer"},
+                )
+            if url.endswith("/me"):
+                return DummyResponse(
+                    200,
+                    {
+                        "user_id": "ig-account-456",
+                        "username": "owner-ig",
+                        "id": "ig-scoped-123",
+                    },
                 )
             return DummyResponse(404, {}, "not found")
 
@@ -224,7 +231,9 @@ async def test_callback_exchanges_tokens_and_syncs_worker(client, db_session, mo
         OAuthTokenRepository(db_session), settings.oauth_encryption_key
     ).get_tokens("instagram", user_id=user.id)
     assert stored is not None
-    assert stored.account_id == "ig-user-123"
+    assert stored.account_id == "ig-account-456"
+    assert stored.instagram_user_id == "ig-scoped-123"
+    assert stored.username == "owner-ig"
 
 
 @pytest.mark.asyncio

@@ -41,20 +41,18 @@ async def create_worker_app(
         Created worker app
 
     Raises:
-        409: If worker app with account_id already exists
+        409: If worker app for the user_id already exists
     """
 
-    # Check if worker app already exists for this owner
-    if await repo.exists_by_account_id(worker_app_data.account_id):
+    # Check if worker app already exists for this user
+    if await repo.exists_by_user_id(worker_app_data.user_id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Worker app already exists for account_id: {worker_app_data.account_id}"
+            detail="Worker app already exists for this user_id"
         )
 
     # Create worker app
     worker_app = WorkerApp(
-        account_id=worker_app_data.account_id,
-        owner_instagram_username=worker_app_data.owner_instagram_username,
         base_url=str(worker_app_data.base_url),
         user_id=worker_app_data.user_id,
         webhook_url=str(
@@ -67,10 +65,9 @@ async def create_worker_app(
     await session.refresh(worker_app)
 
     logger.info(
-        "Created worker app id=%s account_id=%s username=%s",
+        "Created worker app id=%s user_id=%s",
         worker_app.id,
-        worker_app.account_id,
-        worker_app.owner_instagram_username,
+        worker_app.user_id,
     )
 
     return worker_app
@@ -173,9 +170,6 @@ async def update_worker_app(
         )
 
     # Update fields if provided
-    if worker_app_data.owner_instagram_username is not None:
-        worker_app.owner_instagram_username = worker_app_data.owner_instagram_username
-
     if worker_app_data.base_url is not None:
         worker_app.base_url = str(worker_app_data.base_url)
     if worker_app_data.user_id is not None:
@@ -222,33 +216,3 @@ async def delete_worker_app(
     logger.info("Deleted worker app id=%s", worker_app_id)
 
     return None
-
-
-@router.get("/account/{account_id}", response_model=WorkerAppResponse)
-async def get_worker_app_by_account(
-    account_id: str,
-    repo: Annotated[WorkerAppRepository, Depends(get_worker_app_repository)],
-    _admin_user: Annotated[User, Depends(get_current_admin_user)],
-):
-    """
-    Get worker app by Instagram account ID.
-
-    Args:
-        account_id: Instagram account ID
-
-    Returns:
-        Worker app for the owner
-
-    Raises:
-        404: If no worker app found for account
-    """
-
-    worker_app = await repo.get_by_account_id(account_id)
-
-    if not worker_app:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No worker app found for account_id: {account_id}"
-        )
-
-    return worker_app

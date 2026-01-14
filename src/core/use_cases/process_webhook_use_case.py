@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.models.instagram_comment import InstagramComment
 from src.core.models.worker_app import WorkerApp
 from src.core.repositories.instagram_comment_repository import InstagramCommentRepository
+from src.core.repositories.oauth_token_repository import OAuthTokenRepository
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 from src.core.services.redis_cache_service import RedisCacheService
 from src.core.use_cases.forward_webhook_use_case import ForwardWebhookUseCase
@@ -40,6 +41,7 @@ class ProcessWebhookUseCase:
         self.redis_cache = redis_cache
         self.worker_app_repo = WorkerAppRepository(session)
         self.comment_repo = InstagramCommentRepository(session)
+        self.oauth_token_repo = OAuthTokenRepository(session)
 
     async def execute(
         self,
@@ -161,7 +163,7 @@ class ProcessWebhookUseCase:
             }
 
         # Get worker app (with caching)
-        worker_app = await self._get_worker_app_cached(account_id)
+        worker_app, owner_username = await self._get_worker_app_cached(account_id)
 
         if not worker_app:
             error = f"No worker app found for account_id={account_id}"
@@ -187,31 +189,34 @@ class ProcessWebhookUseCase:
             worker_app=worker_app,
             webhook_payload=webhook_payload,
             account_id=account_id,
+            owner_username=owner_username,
             original_headers=original_headers,
             raw_payload=raw_payload,
         )
 
         if forward_result.get("success"):
+            owner_label = owner_username or "unknown"
             logger.info(
                 "Successfully processed comment_id=%s for account_id=%s (username=%s)",
                 comment_id,
                 account_id,
-                worker_app.owner_instagram_username,
+                owner_label,
             )
             return {
                 "success": True,
                 "comment_id": comment_id,
                 "account_id": account_id,
-                "worker_app_username": worker_app.owner_instagram_username,
+                "worker_app_username": owner_username,
                 "worker_app_base_url": worker_app.base_url,
                 "worker_app_webhook_url": worker_app.webhook_url,
                 "processing_time_ms": forward_result.get("processing_time_ms"),
             }
         else:
             error_detail = forward_result.get("error")
+            owner_label = owner_username or "unknown"
             logger.error(
                 "Failed to forward webhook to %s (account_id=%s): %s",
-                worker_app.owner_instagram_username,
+                owner_label,
                 account_id,
                 error_detail,
             )
@@ -221,20 +226,24 @@ class ProcessWebhookUseCase:
                 "comment_id": comment_id,
             }
 
-    async def _get_worker_app_cached(self, account_id: str) -> Optional[WorkerApp]:
+    async def _get_worker_app_cached(
+        self, account_id: str
+    ) -> tuple[Optional[WorkerApp], Optional[str]]:
         """Retrieve worker app configuration with optional Redis caching."""
         cached_id: Optional[str] = None
+        cached_username: Optional[str] = None
 
         if self.redis_cache:
             cached_data = await self.redis_cache.get_worker_app(account_id)
             if cached_data:
                 logger.debug("Worker app cache HIT for account_id=%s", account_id)
                 cached_id = cached_data.get("id")
+                cached_username = cached_data.get("username")
                 if cached_id:
                     try:
                         worker_app = await self.worker_app_repo.get_by_id(UUID(cached_id))
                         if worker_app:
-                            return worker_app
+                            return worker_app, cached_username
                     except (ValueError, TypeError):
                         logger.warning(
                             "Invalid worker app id in cache for account_id=%s",
@@ -242,20 +251,25 @@ class ProcessWebhookUseCase:
                         )
 
         # Cache miss or invalid entry -> fetch from DB
-        worker_app = await self.worker_app_repo.get_by_account_id(account_id)
+        token = await self.oauth_token_repo.get_by_provider_account_id(
+            "instagram", account_id
+        )
+        if not token or not token.user_id:
+            return None, None
+        worker_app = await self.worker_app_repo.get_by_user_id(token.user_id)
 
         if worker_app and self.redis_cache:
             cache_payload = {
                 "id": str(worker_app.id),
-                "account_id": worker_app.account_id,
-                "owner_instagram_username": worker_app.owner_instagram_username,
+                "account_id": account_id,
+                "username": token.username,
                 "base_url": worker_app.base_url,
                 "webhook_url": worker_app.webhook_url,
                 "user_id": str(worker_app.user_id) if worker_app.user_id else None,
             }
             await self.redis_cache.set_worker_app(account_id, cache_payload)
 
-        return worker_app
+        return worker_app, token.username
 
     async def _store_comment(self, comment_data: dict) -> None:
         """Store comment in database."""

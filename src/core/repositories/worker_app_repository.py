@@ -16,21 +16,6 @@ class WorkerAppRepository(BaseRepository[WorkerApp]):
     def __init__(self, session: AsyncSession):
         super().__init__(WorkerApp, session)
 
-    async def get_by_account_id(self, account_id: str) -> Optional[WorkerApp]:
-        """
-        Get worker app by Instagram account ID.
-
-        Args:
-            account_id: Instagram account ID
-
-        Returns:
-            WorkerApp if found, None otherwise
-        """
-        result = await self.session.execute(
-            select(WorkerApp).where(WorkerApp.account_id == account_id)
-        )
-        return result.scalar_one_or_none()
-
     async def get_by_user_id(self, user_id: UUID) -> Optional[WorkerApp]:
         """
         Get worker app associated with a specific application user.
@@ -46,15 +31,15 @@ class WorkerAppRepository(BaseRepository[WorkerApp]):
         )
         return result.scalar_one_or_none()
 
-    async def exists_by_account_id(self, account_id: str) -> bool:
+    async def exists_by_user_id(self, user_id: UUID) -> bool:
         """
-        Check if worker app exists for account ID.
+        Check if worker app exists for user ID.
 
         Args:
-            account_id: Instagram account ID
+            user_id: User ID
 
         Returns:
             True if exists, False otherwise
         """
-        worker_app = await self.get_by_account_id(account_id)
+        worker_app = await self.get_by_user_id(user_id)
         return worker_app is not None

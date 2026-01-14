@@ -358,6 +358,34 @@ async def callback(
         else None
     )
 
+    api_base_url = settings.instagram.api_base_url.rstrip("/")
+    me_url = f"{api_base_url}/me"
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        me_resp = await client.get(
+            me_url,
+            params={"fields": "user_id,username", "access_token": long_token},
+        )
+        if me_resp.status_code != 200:
+            logger.error(
+                "Instagram /me lookup failed: %s %s",
+                me_resp.status_code,
+                me_resp.text,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to fetch Instagram profile",
+            )
+        me_data = me_resp.json()
+
+    account_id = me_data.get("user_id") or me_data.get("id")
+    instagram_user_id = me_data.get("id") or ig_user_id
+    username = me_data.get("username")
+    if not account_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Instagram account id not returned",
+        )
+
     if not permissions:
         permissions = ",".join(_parse_scopes(scope_source))
 
@@ -376,8 +404,10 @@ async def callback(
 
     stored = await token_service.store_tokens(
         provider=PROVIDER,
-        account_id=str(ig_user_id),
+        account_id=str(account_id),
         user_id=user.id,
+        instagram_user_id=str(instagram_user_id) if instagram_user_id else None,
+        username=username,
         access_token=long_token,
         refresh_token=None,
         scope=permissions,
@@ -396,6 +426,8 @@ async def callback(
             payload = {
                 "provider": PROVIDER,
                 "account_id": stored.account_id,
+                "instagram_user_id": stored.instagram_user_id,
+                "username": stored.username,
                 "access_token_encrypted": access_token_encrypted,
                 "token_type": token_type,
                 "scope": permissions,
@@ -564,6 +596,8 @@ async def refresh_token(
                 payload = {
                     "provider": PROVIDER,
                     "account_id": token.account_id,
+                    "instagram_user_id": updated.instagram_user_id,
+                    "username": updated.username,
                     "access_token_encrypted": access_token_encrypted,
                     "token_type": token_type,
                     "scope": token.scope,

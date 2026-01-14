@@ -32,15 +32,11 @@ async def test_worker_app_repository_operations(db_session):
     await db_session.refresh(user)
 
     worker_with_user = WorkerApp(
-        account_id="acct-worker-1",
-        owner_instagram_username="worker1",
         base_url="https://worker1.example",
         webhook_url="https://worker1.example/hook",
         user_id=user.id,
     )
     worker_without_user = WorkerApp(
-        account_id="acct-worker-2",
-        owner_instagram_username="worker2",
         base_url="https://worker2.example",
         webhook_url="https://worker2.example/hook",
     )
@@ -49,23 +45,19 @@ async def test_worker_app_repository_operations(db_session):
     await repo.create(worker_without_user)
     await db_session.commit()
 
-    fetched = await repo.get_by_account_id("acct-worker-1")
-    assert fetched is not None
-    assert fetched.owner_instagram_username == "worker1"
-
     fetched_by_user = await repo.get_by_user_id(user.id)
     assert fetched_by_user is not None
-    assert fetched_by_user.account_id == worker_with_user.account_id
+    assert fetched_by_user.id == worker_with_user.id
 
-    assert await repo.exists_by_account_id("acct-worker-1") is True
-    assert await repo.exists_by_account_id("missing-acct") is False
+    assert await repo.exists_by_user_id(user.id) is True
+    assert await repo.exists_by_user_id(uuid4()) is False
 
     all_workers = await repo.get_all(limit=10, offset=0)
-    assert {w.account_id for w in all_workers} == {"acct-worker-1", "acct-worker-2"}
+    assert {w.id for w in all_workers} == {worker_with_user.id, worker_without_user.id}
 
     await repo.delete(worker_without_user)
     await db_session.commit()
-    assert await repo.get_by_account_id("acct-worker-2") is None
+    assert await repo.get_by_user_id(user.id) is not None
 
 
 @pytest.mark.asyncio
@@ -154,8 +146,6 @@ async def test_webhook_log_repository_queries(db_session):
     log_repo = WebhookLogRepository(db_session)
 
     worker = WorkerApp(
-        account_id="acct-logs",
-        owner_instagram_username="logowner",
         base_url="https://log.example",
         webhook_url="https://log.example/hook",
     )

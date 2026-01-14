@@ -31,12 +31,28 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def get_by_provider_account_id(
+        self, provider: str, account_id: str
+    ) -> Optional[OAuthToken]:
+        stmt = (
+            select(OAuthToken)
+            .where(
+                OAuthToken.provider == provider,
+                OAuthToken.account_id == account_id,
+            )
+            .order_by(OAuthToken.updated_at.desc(), OAuthToken.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
     async def upsert(
         self,
         *,
         provider: str,
         account_id: str,
         user_id: UUID | str,
+        instagram_user_id: Optional[str] = None,
+        username: Optional[str] = None,
         encrypted_access_token: str,
         encrypted_refresh_token: Optional[str],
         scope: Optional[str],
@@ -50,6 +66,10 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
             existing.scope = scope
             existing.access_token_expires_at = access_token_expires_at
             existing.refresh_token_expires_at = refresh_token_expires_at
+            if instagram_user_id is not None:
+                existing.instagram_user_id = instagram_user_id
+            if username is not None:
+                existing.username = username
             await self.session.flush()
             return existing
 
@@ -57,6 +77,8 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
             provider=provider,
             account_id=account_id,
             user_id=user_id,
+            instagram_user_id=instagram_user_id,
+            username=username,
             encrypted_access_token=encrypted_access_token,
             encrypted_refresh_token=encrypted_refresh_token,
             scope=scope,

@@ -27,12 +27,10 @@ async def _get_token(client, *, username: str, password: str) -> str:
     return response.json()["access_token"]
 
 
-async def _create_worker_app_record(session, *, account_id: str, username: str, user_id=None) -> WorkerApp:
+async def _create_worker_app_record(session, *, user_id, name: str) -> WorkerApp:
     worker = WorkerApp(
-        account_id=account_id,
-        owner_instagram_username=username,
-        base_url=f"https://{username}.example/base",
-        webhook_url=f"https://{username}.example/webhook",
+        base_url=f"https://{name}.example/base",
+        webhook_url=f"https://{name}.example/webhook",
         user_id=user_id,
     )
     session.add(worker)
@@ -89,11 +87,9 @@ async def test_admin_can_create_and_fetch_worker_app(client, db_session):
     token = await _get_token(client, username=admin.username, password="secret")
 
     payload = {
-        "account_id": "acct-new",
-        "owner_instagram_username": "new-owner",
         "base_url": "https://worker-new.example/api",
         "webhook_url": "https://worker-new.example/hook",
-        "user_id": None,
+        "user_id": str(admin.id),
     }
 
     response = await client.post(
@@ -104,7 +100,7 @@ async def test_admin_can_create_and_fetch_worker_app(client, db_session):
 
     assert response.status_code == 201
     created = response.json()
-    assert created["account_id"] == payload["account_id"]
+    assert created["user_id"] == str(admin.id)
 
     worker_id = created["id"]
     get_response = await client.get(
@@ -112,23 +108,21 @@ async def test_admin_can_create_and_fetch_worker_app(client, db_session):
         headers=_auth_headers(token),
     )
     assert get_response.status_code == 200
-    assert get_response.json()["owner_instagram_username"] == "new-owner"
+    assert get_response.json()["webhook_url"] == "https://worker-new.example/hook"
 
 
 @pytest.mark.asyncio
 async def test_create_worker_app_conflict_returns_409(client, db_session):
     admin = await _create_user(db_session, username="conflict-admin", password="secret", role=UserRole.ADMIN)
     token = await _get_token(client, username=admin.username, password="secret")
-    await _create_worker_app_record(db_session, account_id="acct-duplicate", username="dup-owner")
+    await _create_worker_app_record(db_session, user_id=admin.id, name="dup-owner")
 
     response = await client.post(
         "/api/v1/worker-apps",
         json={
-            "account_id": "acct-duplicate",
-            "owner_instagram_username": "dup-owner",
             "base_url": "https://dup.example/base",
             "webhook_url": "https://dup.example/hook",
-            "user_id": None,
+            "user_id": str(admin.id),
         },
         headers=_auth_headers(token),
     )
@@ -140,22 +134,20 @@ async def test_create_worker_app_conflict_returns_409(client, db_session):
 async def test_update_worker_app_changes_fields(client, db_session):
     admin = await _create_user(db_session, username="update-admin", password="secret", role=UserRole.ADMIN)
     token = await _get_token(client, username=admin.username, password="secret")
-    worker = await _create_worker_app_record(db_session, account_id="acct-update", username="old-owner")
+    worker = await _create_worker_app_record(db_session, user_id=admin.id, name="old-owner")
 
     response = await client.put(
         f"/api/v1/worker-apps/{worker.id}",
         json={
-            "owner_instagram_username": "updated-owner",
             "base_url": "https://updated.example/base",
             "webhook_url": "https://updated.example/hook",
-            "user_id": None,
+            "user_id": str(admin.id),
         },
         headers=_auth_headers(token),
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["owner_instagram_username"] == "updated-owner"
     assert payload["base_url"] == "https://updated.example/base"
 
 
@@ -163,7 +155,7 @@ async def test_update_worker_app_changes_fields(client, db_session):
 async def test_delete_worker_app_removes_entry(client, db_session):
     admin = await _create_user(db_session, username="delete-admin", password="secret", role=UserRole.ADMIN)
     token = await _get_token(client, username=admin.username, password="secret")
-    worker = await _create_worker_app_record(db_session, account_id="acct-delete", username="delete-owner")
+    worker = await _create_worker_app_record(db_session, user_id=admin.id, name="delete-owner")
 
     response = await client.delete(
         f"/api/v1/worker-apps/{worker.id}",
@@ -180,33 +172,6 @@ async def test_delete_worker_app_removes_entry(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_get_worker_app_by_account_handles_missing(client, db_session):
-    admin = await _create_user(db_session, username="lookup-admin", password="secret", role=UserRole.ADMIN)
-    token = await _get_token(client, username=admin.username, password="secret")
-
-    response = await client.get(
-        "/api/v1/worker-apps/account/does-not-exist",
-        headers=_auth_headers(token),
-    )
-    assert response.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_get_worker_app_by_account_success(client, db_session):
-    admin = await _create_user(db_session, username="lookup-admin2", password="secret", role=UserRole.ADMIN)
-    token = await _get_token(client, username=admin.username, password="secret")
-    worker = await _create_worker_app_record(db_session, account_id="acct-success", username="owner-success")
-
-    response = await client.get(
-        f"/api/v1/worker-apps/account/{worker.account_id}",
-        headers=_auth_headers(token),
-    )
-
-    assert response.status_code == 200
-    assert response.json()["account_id"] == worker.account_id
-
-
-@pytest.mark.asyncio
 async def test_update_worker_app_not_found_returns_404(client, db_session):
     admin = await _create_user(db_session, username="update-missing", password="secret", role=UserRole.ADMIN)
     token = await _get_token(client, username=admin.username, password="secret")
@@ -214,7 +179,7 @@ async def test_update_worker_app_not_found_returns_404(client, db_session):
     response = await client.put(
         "/api/v1/worker-apps/00000000-0000-0000-0000-000000000000",
         json={
-            "owner_instagram_username": "who",
+            "base_url": "https://missing.example/base",
         },
         headers=_auth_headers(token),
     )
@@ -241,11 +206,9 @@ async def test_non_admin_cannot_create_worker_app(client, db_session):
     response = await client.post(
         "/api/v1/worker-apps",
         json={
-            "account_id": "acct-unauthorized",
-            "owner_instagram_username": "unauthorized",
             "base_url": "https://unauth.example/base",
             "webhook_url": "https://unauth.example/hook",
-            "user_id": None,
+            "user_id": str(user.id),
         },
         headers=_auth_headers(token),
     )

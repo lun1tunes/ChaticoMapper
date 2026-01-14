@@ -33,6 +33,7 @@ class ForwardWebhookUseCase:
         worker_app: WorkerApp,
         webhook_payload: dict,
         account_id: str,
+        owner_username: str | None = None,
         original_headers: dict[str, str] | None = None,
         raw_payload: bytes | None = None,
     ) -> dict:
@@ -75,6 +76,7 @@ class ForwardWebhookUseCase:
                 webhook_id=webhook_id,
                 account_id=account_id,
                 worker_app=worker_app,
+                owner_username=owner_username,
                 result=result,
                 processing_time_ms=processing_time_ms,
             )
@@ -90,6 +92,7 @@ class ForwardWebhookUseCase:
                 webhook_id=webhook_id,
                 account_id=account_id,
                 worker_app=worker_app,
+                owner_username=owner_username,
                 result={"success": False, "error": str(e)},
                 processing_time_ms=processing_time_ms,
             )
@@ -145,7 +148,7 @@ class ForwardWebhookUseCase:
                 if response.status_code in (200, 201, 202, 204):
                     logger.info(
                         "Forwarded webhook to %s (%s) status=%s",
-                        worker_app.owner_instagram_username,
+                        worker_app.id,
                         url,
                         response.status_code,
                     )
@@ -157,8 +160,8 @@ class ForwardWebhookUseCase:
                     }
                 else:
                     logger.warning(
-                        "Worker app responded with non-success status: username=%s webhook_url=%s status=%s",
-                        worker_app.owner_instagram_username,
+                        "Worker app responded with non-success status: worker_app_id=%s webhook_url=%s status=%s",
+                        worker_app.id,
                         url,
                         response.status_code,
                     )
@@ -172,8 +175,8 @@ class ForwardWebhookUseCase:
 
         except httpx.TimeoutException:
             logger.error(
-                "Timeout forwarding to %s (webhook_url=%s)",
-                worker_app.owner_instagram_username,
+                "Timeout forwarding to worker_app_id=%s (webhook_url=%s)",
+                worker_app.id,
                 url,
             )
             return {
@@ -184,8 +187,8 @@ class ForwardWebhookUseCase:
 
         except httpx.RequestError as e:
             logger.error(
-                "Request error forwarding to %s (webhook_url=%s): %s",
-                worker_app.owner_instagram_username,
+                "Request error forwarding to worker_app_id=%s (webhook_url=%s): %s",
+                worker_app.id,
                 url,
                 e,
             )
@@ -233,6 +236,7 @@ class ForwardWebhookUseCase:
         webhook_id: str,
         account_id: str,
         worker_app: WorkerApp,
+        owner_username: str | None,
         result: dict,
         processing_time_ms: int,
     ) -> None:
@@ -251,7 +255,7 @@ class ForwardWebhookUseCase:
                 webhook_id=webhook_id,
                 account_id=account_id,
                 worker_app_id=worker_app.id,
-                target_owner_username=worker_app.owner_instagram_username,
+                target_owner_username=owner_username,
                 target_base_url=worker_app.webhook_url or worker_app.base_url,
                 status="success" if result.get("success") else "failed",
                 error_message=result.get("error"),
