@@ -105,6 +105,10 @@ class InstagramSettings(BaseModel):
     verify_token: str = Field(
         default_factory=lambda: os.getenv("WEBHOOK_INIT_VERIFY_TOKEN", "").strip()
     )
+    webhook_subscribed_fields: Optional[str] = Field(
+        default_factory=lambda: os.getenv("INSTAGRAM_WEBHOOK_SUBSCRIBED_FIELDS", "").strip()
+        or None
+    )
 
     @model_validator(mode="after")
     def _validate(self) -> "InstagramSettings":

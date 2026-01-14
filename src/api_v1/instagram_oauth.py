@@ -155,6 +155,21 @@ def _parse_scopes(raw: str | None) -> list[str]:
     return deduped
 
 
+def _parse_subscribed_fields(raw: str | None) -> str:
+    if not raw:
+        return "comments"
+    parts = [part.strip() for part in raw.replace(",", " ").split() if part.strip()]
+    if not parts:
+        return "comments"
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for field in parts:
+        if field not in seen:
+            seen.add(field)
+            deduped.append(field)
+    return ",".join(deduped)
+
+
 def _split_auth_url(auth_url: str) -> tuple[str, dict[str, str]]:
     parsed = urlparse(auth_url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
@@ -389,6 +404,41 @@ async def callback(
     if not permissions:
         permissions = ",".join(_parse_scopes(scope_source))
 
+    subscription_success = False
+    subscribed_fields = _parse_subscribed_fields(
+        settings.instagram.webhook_subscribed_fields
+    )
+    subscribe_url = f"{api_base_url}/{account_id}/subscribed_apps"
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            subscribe_resp = await client.post(
+                subscribe_url,
+                params={
+                    "subscribed_fields": subscribed_fields,
+                    "access_token": long_token,
+                },
+            )
+            if subscribe_resp.status_code == 200:
+                try:
+                    subscribe_data = subscribe_resp.json()
+                except ValueError:
+                    subscribe_data = {}
+                subscription_success = bool(subscribe_data.get("success"))
+                if not subscription_success:
+                    logger.error(
+                        "Instagram subscription failed: %s %s",
+                        subscribe_resp.status_code,
+                        subscribe_resp.text,
+                    )
+            else:
+                logger.error(
+                    "Instagram subscription failed: %s %s",
+                    subscribe_resp.status_code,
+                    subscribe_resp.text,
+                )
+    except Exception as exc:
+        logger.error("Instagram subscription request failed: %s", exc)
+
     # Encrypt tokens for worker backend
     fernet = Fernet(settings.oauth_encryption_key)
     try:
@@ -477,6 +527,7 @@ async def callback(
                 {
                     "instagram_status": "connected",
                     "instagram_worker_synced": str(worker_synced).lower(),
+                    "instagram_subscription_success": str(subscription_success).lower(),
                     "instagram_access_expires_at": stored.access_token_expires_at.isoformat()
                     if stored.access_token_expires_at
                     else "",
@@ -492,6 +543,7 @@ async def callback(
             "status": "connected",
             "account_id": stored.account_id,
             "scope": stored.scope,
+            "subscription_success": subscription_success,
             "access_token_expires_at": stored.access_token_expires_at.isoformat()
             if stored.access_token_expires_at
             else None,
