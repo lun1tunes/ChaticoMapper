@@ -16,7 +16,7 @@ services:
     volumes:
       - mapper_app_postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     networks:
       - mapper-network
     healthcheck:
@@ -44,7 +44,7 @@ services:
     volumes:
       - mapper_app_redis_data:/data
     ports:
-      - "${REDIS_PORT:-6380}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
     networks:
       - mapper-network
     healthcheck:
