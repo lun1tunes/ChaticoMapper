@@ -41,6 +41,13 @@ class AppSettings(BaseModel):
     log_level: str = Field(
         default_factory=lambda: os.getenv("LOG_LEVEL", "INFO").strip().upper()
     )
+    oauth_redirect_url: Optional[str] = Field(
+        default_factory=lambda: os.getenv("OAUTH_REDIRECT_URL", "").strip() or None
+    )
+    oauth_redirect_path: str = Field(
+        default_factory=lambda: os.getenv("OAUTH_REDIRECT_PATH", "/chatico/settings").strip()
+        or "/chatico/settings"
+    )
 
     @model_validator(mode="after")
     def _validate(self) -> "AppSettings":
@@ -242,6 +249,14 @@ class Settings(BaseModel):
     @property
     def log_level(self) -> str:
         return self.app.log_level
+
+    @property
+    def oauth_redirect_url(self) -> Optional[str]:
+        return self.app.oauth_redirect_url
+
+    @property
+    def oauth_redirect_path(self) -> str:
+        return self.app.oauth_redirect_path
 
     @property
     def host(self) -> str:

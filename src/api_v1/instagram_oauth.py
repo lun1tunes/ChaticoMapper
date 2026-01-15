@@ -121,6 +121,20 @@ def _with_query(url: str, extra: dict[str, str]) -> str:
     return urlunparse(parsed._replace(query=new_query))
 
 
+def _resolve_default_redirect(settings: Settings) -> Optional[str]:
+    if settings.oauth_redirect_url:
+        return settings.oauth_redirect_url
+    redirect_uri = settings.instagram.redirect_uri
+    if not redirect_uri:
+        return None
+    parsed = urlparse(redirect_uri)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    path = settings.oauth_redirect_path or "/chatico/settings"
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    return f"{parsed.scheme}://{parsed.netloc}{normalized_path}"
+
+
 def _parse_scopes(raw: str | None) -> list[str]:
     if not raw:
         return [
@@ -607,7 +621,7 @@ async def callback(
     redirect_target = (
         redirect_from_state
         or request.query_params.get("redirect_to")
-        or "https://lunitunestmb.com/chatico/settings"
+        or _resolve_default_redirect(settings)
     )
     if redirect_target:
         try:

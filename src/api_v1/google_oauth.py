@@ -114,6 +114,19 @@ def _with_query(url: str, extra: dict[str, str]) -> str:
     return urlunparse(parsed._replace(query=new_query))
 
 
+def _resolve_default_redirect(settings: Settings, redirect_uri: str) -> Optional[str]:
+    if settings.oauth_redirect_url:
+        return settings.oauth_redirect_url
+    if not redirect_uri:
+        return None
+    parsed = urlparse(redirect_uri)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    path = settings.oauth_redirect_path or "/chatico/settings"
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    return f"{parsed.scheme}://{parsed.netloc}{normalized_path}"
+
+
 @router.get("/authorize", response_class=Response, response_model=None)
 async def authorize(
     request: Request,
@@ -356,7 +369,7 @@ async def callback(
     redirect_target = (
         redirect_from_state
         or request.query_params.get("redirect_to")
-        or "https://lunitunestmb.com/chatico/settings"
+        or _resolve_default_redirect(settings, settings.youtube_redirect_uri)
     )
     # Append status info for the frontend to consume
     if redirect_target:
