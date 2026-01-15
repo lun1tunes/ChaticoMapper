@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import hashlib
 import hmac
 import logging
@@ -10,12 +11,13 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import Settings, get_settings
@@ -26,7 +28,12 @@ from src.core.dependencies import (
     get_user_repository,
     get_worker_app_repository,
 )
+from src.core.models.instagram_comment import InstagramComment
+from src.core.models.oauth_token import OAuthToken
 from src.core.models.user import User
+from src.core.models.webhook_log import WebhookLog
+from src.core.models.worker_app import WorkerApp
+from src.core.repositories.oauth_token_repository import OAuthTokenRepository
 from src.core.repositories.user_repository import UserRepository
 from src.core.repositories.worker_app_repository import WorkerAppRepository
 from src.core.services.oauth_token_service import OAuthTokenService
@@ -168,6 +175,88 @@ def _parse_subscribed_fields(raw: str | None) -> str:
             seen.add(field)
             deduped.append(field)
     return ",".join(deduped)
+
+
+def _base64_url_decode(value: str) -> bytes:
+    padded = value + "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(padded.encode("utf-8"))
+
+
+def _parse_signed_request(signed_request: str, app_secret: str) -> dict:
+    try:
+        encoded_sig, payload = signed_request.split(".", 1)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid signed_request format",
+        ) from exc
+
+    try:
+        sig = _base64_url_decode(encoded_sig)
+        data = json.loads(_base64_url_decode(payload))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid signed_request payload",
+        ) from exc
+
+    expected_sig = hmac.new(
+        app_secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
+    ).digest()
+    if not hmac.compare_digest(sig, expected_sig):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid signed_request signature",
+        )
+
+    algorithm = (data.get("algorithm") or "").upper()
+    if algorithm and algorithm != "HMAC-SHA256":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid signed_request algorithm",
+        )
+
+    return data
+
+
+async def _notify_worker(
+    base_target: str,
+    endpoint_path: str,
+    payload: dict,
+    *,
+    method: str = "post",
+    timeout: float = 10.0,
+) -> bool:
+    parsed = urlparse(base_target)
+    if not parsed.scheme or not parsed.netloc:
+        logger.error("Worker app URL is invalid: %s", base_target)
+        return False
+
+    suffix = endpoint_path if endpoint_path.startswith("/") else f"/{endpoint_path}"
+    worker_endpoint = f"{parsed.scheme}://{parsed.netloc}{suffix}"
+    try:
+        internal_jwt = create_internal_service_token()
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {internal_jwt}",
+        }
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            if method == "delete":
+                resp = await client.delete(worker_endpoint, json=payload, headers=headers)
+            else:
+                resp = await client.post(worker_endpoint, json=payload, headers=headers)
+        if resp.status_code < 400:
+            return True
+        logger.error(
+            "Worker backend rejected %s: status=%s body=%s endpoint=%s",
+            method,
+            resp.status_code,
+            resp.text,
+            worker_endpoint,
+        )
+    except Exception as exc:  # pragma: no cover - network guard rail
+        logger.error("Failed to notify worker backend: %s", exc)
+    return False
 
 
 def _split_auth_url(auth_url: str) -> tuple[str, dict[str, str]]:
@@ -796,3 +885,193 @@ async def account_status(
         ),
         "access_token_valid": access_token_valid,
     }
+
+
+@router.post("/deauthorize")
+async def deauthorize_callback(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    worker_app_repo: Annotated[
+        WorkerAppRepository, Depends(get_worker_app_repository)
+    ],
+) -> Response:
+    """
+    Meta Deauthorize Callback URL handler.
+
+    Removes Instagram tokens and notifies worker app to delete credentials.
+    """
+    form = await request.form()
+    signed_request = form.get("signed_request") or request.query_params.get(
+        "signed_request"
+    )
+    if not signed_request:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing signed_request",
+        )
+
+    payload = _parse_signed_request(signed_request, settings.instagram.app_secret)
+    instagram_user_id = payload.get("user_id")
+    if not instagram_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing user_id in signed_request",
+        )
+
+    token_repo = OAuthTokenRepository(session)
+    tokens = await token_repo.list_by_provider_instagram_user_id(
+        PROVIDER, str(instagram_user_id)
+    )
+    tokens_by_user: dict[UUID, list[dict]] = {}
+    worker_targets_by_user: dict[UUID, str] = {}
+    for token in tokens:
+        if not token.user_id:
+            continue
+        tokens_by_user.setdefault(token.user_id, []).append(
+            {
+                "provider": PROVIDER,
+                "account_id": token.account_id,
+                "instagram_user_id": token.instagram_user_id,
+                "username": token.username,
+            }
+        )
+
+    for user_id in tokens_by_user:
+        worker_app = await worker_app_repo.get_by_user_id(user_id)
+        if worker_app:
+            worker_targets_by_user[user_id] = (
+                worker_app.webhook_url or worker_app.base_url
+            )
+
+    if tokens:
+        await session.execute(
+            delete(OAuthToken).where(
+                OAuthToken.provider == PROVIDER,
+                OAuthToken.instagram_user_id == str(instagram_user_id),
+            )
+        )
+        await session.commit()
+
+        for user_id, payloads in tokens_by_user.items():
+            base_target = worker_targets_by_user.get(user_id)
+            if not base_target:
+                continue
+            for payload in payloads:
+                await _notify_worker(
+                    base_target,
+                    "/api/v1/oauth/tokens",
+                    payload,
+                    method="delete",
+                    timeout=10.0,
+                )
+
+    return JSONResponse({"success": True})
+
+
+@router.post("/data-deletion")
+async def data_deletion_callback(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    worker_app_repo: Annotated[
+        WorkerAppRepository, Depends(get_worker_app_repository)
+    ],
+) -> dict:
+    """
+    Meta Data Deletion Request handler.
+
+    Deletes all stored data for the Instagram user and notifies the worker app.
+    """
+    form = await request.form()
+    signed_request = form.get("signed_request") or request.query_params.get(
+        "signed_request"
+    )
+    if not signed_request:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing signed_request",
+        )
+
+    payload = _parse_signed_request(signed_request, settings.instagram.app_secret)
+    instagram_user_id = payload.get("user_id")
+    if not instagram_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing user_id in signed_request",
+        )
+
+    token_repo = OAuthTokenRepository(session)
+    tokens = await token_repo.list_by_provider_instagram_user_id(
+        PROVIDER, str(instagram_user_id)
+    )
+    account_ids = {token.account_id for token in tokens}
+    user_ids = {token.user_id for token in tokens if token.user_id}
+    account_ids_by_user: dict[UUID, set[str]] = {}
+    for token in tokens:
+        if token.user_id:
+            account_ids_by_user.setdefault(token.user_id, set()).add(token.account_id)
+
+    if account_ids:
+        await session.execute(
+            delete(InstagramComment).where(
+                InstagramComment.owner_id.in_(account_ids)
+            )
+        )
+        await session.execute(
+            delete(WebhookLog).where(WebhookLog.account_id.in_(account_ids))
+        )
+
+    await session.execute(
+        delete(OAuthToken).where(
+            OAuthToken.provider == PROVIDER,
+            OAuthToken.instagram_user_id == str(instagram_user_id),
+        )
+    )
+
+    worker_targets_by_user: dict[UUID, str] = {}
+    for user_id in user_ids:
+        worker_app = await worker_app_repo.get_by_user_id(user_id)
+        if worker_app:
+            worker_targets_by_user[user_id] = (
+                worker_app.webhook_url or worker_app.base_url
+            )
+
+    await session.commit()
+
+    for user_id, base_target in worker_targets_by_user.items():
+        user_account_ids = account_ids_by_user.get(user_id, set())
+        if not user_account_ids:
+            continue
+        payload = {
+            "provider": PROVIDER,
+            "instagram_user_id": str(instagram_user_id),
+            "account_ids": list(user_account_ids),
+        }
+        await _notify_worker(
+            base_target,
+            "/api/v1/oauth/data-deletion",
+            payload,
+            method="post",
+            timeout=10.0,
+        )
+
+    confirmation_code = uuid4().hex
+    status_url = str(request.url_for("instagram_data_deletion_status"))
+    status_url = _with_query(status_url, {"confirmation_code": confirmation_code})
+    return {
+        "url": status_url,
+        "confirmation_code": confirmation_code,
+    }
+
+
+@router.get("/data-deletion/status", name="instagram_data_deletion_status")
+async def data_deletion_status(confirmation_code: str) -> Response:
+    """Human-readable status endpoint for Meta data deletion callbacks."""
+    message = (
+        "Data deletion request received and processed.\n\n"
+        f"Confirmation code: {confirmation_code}\n\n"
+        "If you believe your data has not been deleted or you have questions, "
+        "please contact support."
+    )
+    return Response(content=message, media_type="text/plain")

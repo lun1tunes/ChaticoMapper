@@ -45,6 +45,20 @@ class OAuthTokenRepository(BaseRepository[OAuthToken]):
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def list_by_provider_instagram_user_id(
+        self, provider: str, instagram_user_id: str
+    ) -> list[OAuthToken]:
+        stmt = (
+            select(OAuthToken)
+            .where(
+                OAuthToken.provider == provider,
+                OAuthToken.instagram_user_id == instagram_user_id,
+            )
+            .order_by(OAuthToken.updated_at.desc(), OAuthToken.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def upsert(
         self,
         *,
