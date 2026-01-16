@@ -255,10 +255,12 @@ async def _notify_worker(
             "Authorization": f"Bearer {internal_jwt}",
         }
         async with httpx.AsyncClient(timeout=timeout) as client:
-            if method == "delete":
-                resp = await client.delete(worker_endpoint, json=payload, headers=headers)
-            else:
-                resp = await client.post(worker_endpoint, json=payload, headers=headers)
+            resp = await client.request(
+                method.upper(),
+                worker_endpoint,
+                json=payload,
+                headers=headers,
+            )
         if resp.status_code < 400:
             return True
         logger.error(
