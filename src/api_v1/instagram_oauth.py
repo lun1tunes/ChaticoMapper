@@ -876,6 +876,7 @@ async def account_status(
     return {
         "connected": connected,
         "account_id": token.account_id if token else None,
+        "username": token.username if token else None,
         "scope": token.scope if token else None,
         "access_token_expires_at": (
             access_expires_at.isoformat()
