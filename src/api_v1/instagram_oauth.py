@@ -823,6 +823,8 @@ async def disconnect_account(
         )
 
     account_id = token.account_id
+    instagram_user_id = token.instagram_user_id
+    username = token.username
     deleted = await token_service.delete_tokens(
         provider=PROVIDER, user_id=current_user.id, account_id=account_id
     )
@@ -832,31 +834,19 @@ async def disconnect_account(
     worker_app = await worker_app_repo.get_by_user_id(current_user.id)
     if worker_app:
         base_target = worker_app.webhook_url or worker_app.base_url
-        parsed = urlparse(base_target)
-        if parsed.scheme and parsed.netloc:
-            worker_endpoint = f"{parsed.scheme}://{parsed.netloc}/api/v1/oauth/tokens"
-            payload = {"provider": PROVIDER, "account_id": account_id}
-            try:
-                internal_jwt = create_internal_service_token()
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {internal_jwt}",
-                }
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    resp = await client.delete(worker_endpoint, json=payload, headers=headers)
-                if resp.status_code < 400:
-                    worker_synced = True
-                else:
-                    logger.error(
-                        "Worker backend rejected delete: status=%s body=%s endpoint=%s",
-                        resp.status_code,
-                        resp.text,
-                        worker_endpoint,
-                    )
-            except Exception as exc:  # pragma: no cover - network guard rail
-                logger.error("Failed to notify worker backend about disconnect: %s", exc)
-        else:
-            logger.error("Worker app URL is invalid: %s", base_target)
+        payload = {
+            "provider": PROVIDER,
+            "account_id": account_id,
+            "instagram_user_id": instagram_user_id,
+            "username": username,
+        }
+        worker_synced = await _notify_worker(
+            base_target,
+            "/api/v1/oauth/tokens",
+            payload,
+            method="delete",
+            timeout=10.0,
+        )
     else:
         logger.info("Worker app not configured; skipping worker token revoke.")
 
