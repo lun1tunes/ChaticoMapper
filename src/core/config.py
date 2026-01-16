@@ -29,6 +29,20 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _csv_env(name: str, default: Optional[str] = None) -> list[str]:
+    value = os.getenv(name)
+    if value is None:
+        value = default
+    if value is None:
+        return []
+    value = value.strip()
+    if not value:
+        return []
+    if value == "*":
+        return ["*"]
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 class AppSettings(BaseModel):
     name: str = Field(
         default_factory=lambda: os.getenv("APP_NAME", "Chatico Mapper App").strip()
@@ -149,6 +163,25 @@ class SecuritySettings(BaseModel):
         return self
 
 
+class CorsSettings(BaseModel):
+    allow_origins: list[str] = Field(
+        default_factory=lambda: _csv_env("CORS_ALLOW_ORIGINS", "*")
+    )
+    allow_credentials: bool = Field(
+        default_factory=lambda: _bool_env("CORS_ALLOW_CREDENTIALS", True)
+    )
+    allow_methods: list[str] = Field(
+        default_factory=lambda: _csv_env("CORS_ALLOW_METHODS", "*")
+    )
+    allow_headers: list[str] = Field(
+        default_factory=lambda: _csv_env("CORS_ALLOW_HEADERS", "*")
+    )
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.allow_origins)
+
+
 class JWTSettings(BaseModel):
     algorithm: str = Field(
         default_factory=lambda: os.getenv("JWT_ALGORITHM", "HS256").strip() or "HS256"
@@ -227,6 +260,7 @@ class Settings(BaseModel):
     instagram: InstagramSettings = Field(default_factory=InstagramSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
+    cors: CorsSettings = Field(default_factory=CorsSettings)
     jwt: JWTSettings = Field(default_factory=JWTSettings)
     youtube: YouTubeSettings = Field(default_factory=YouTubeSettings)
     oauth_security: OAuthSecuritySettings = Field(default_factory=OAuthSecuritySettings)
@@ -297,6 +331,22 @@ class Settings(BaseModel):
     @property
     def redis_ttl(self) -> int:
         return self.redis.ttl
+
+    @property
+    def cors_allow_origins(self) -> list[str]:
+        return self.cors.allow_origins
+
+    @property
+    def cors_allow_credentials(self) -> bool:
+        return self.cors.allow_credentials
+
+    @property
+    def cors_allow_methods(self) -> list[str]:
+        return self.cors.allow_methods
+
+    @property
+    def cors_allow_headers(self) -> list[str]:
+        return self.cors.allow_headers
 
     @property
     def app_secret(self) -> str:
