@@ -80,12 +80,18 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI application instance
     """
+    docs_url = "/docs" if settings.debug else None
+    redoc_url = "/redoc" if settings.debug else None
+    openapi_url = "/openapi.json" if settings.debug else None
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         description="Auth management and Instagram webhook mapper for routing comments to worker applications",
         debug=settings.debug,
         lifespan=lifespan,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
     )
 
     # ========================================
